@@ -1,0 +1,40 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions: {}
+
+jobs:
+  release:
+    name: Build and release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # required to create release
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false # not on releases!
+      - run: go test -buildvcs ./...
+      - run: go build -ldflags="-w -s -extldflags=-static" -buildvcs -o go-cache-plugin-linux-amd64 ./cmd/go-cache-plugin
+        env:
+          GOOS: linux
+          GOARCH: amd64
+          CGO_ENABLED: '0'
+      - run: go build -ldflags="-w -s -extldflags=-static" -buildvcs -o go-cache-plugin-linux-arm64 ./cmd/go-cache-plugin
+        env:
+          GOOS: linux
+          GOARCH: arm64
+          CGO_ENABLED: '0'
+      - uses: softprops/action-gh-release@72f2c25fcb47643c292f7107632f7a47c1df5cd8 # v2
+        with:
+          files: |
+            go-cache-plugin-linux-arm64
+            go-cache-plugin-linux-amd64
+            LICENSE
