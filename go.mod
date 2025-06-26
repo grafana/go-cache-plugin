@@ -1,4 +1,4 @@
-module github.com/tailscale/go-cache-plugin
+module github.com/grafana/hackathon-13-go-cache-plugin
 
 go 1.24.0
 

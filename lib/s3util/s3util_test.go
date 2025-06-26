@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tailscale/go-cache-plugin/lib/s3util"
+	"github.com/grafana/hackathon-13-go-cache-plugin/lib/s3util"
 )
 
 func TestETagReader(t *testing.T) {
