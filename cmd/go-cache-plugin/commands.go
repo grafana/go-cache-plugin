@@ -169,12 +169,17 @@ func runServe(env *command.Env) error {
 
 // runConnect implements a direct cache proxy by connecting to a remote server.
 func runConnect(env *command.Env, plugin string) error {
-	port, err := strconv.Atoi(plugin)
-	if err != nil {
-		return fmt.Errorf("invalid plugin port: %w", err)
+	addr := plugin
+	if strings.Contains(plugin) {
+		port, err := strconv.Atoi(plugin)
+		if err != nil {
+			return fmt.Errorf("invalid plugin port: %w", err)
+		}
+
+		addr = fmt.Sprintf(":%d", port)
 	}
 
-	conn, err := net.Dial("tcp", fmt.Sprintf(":%d", port))
+	conn, err := net.Dial("tcp", addr)
 	if err != nil {
 		return fmt.Errorf("dial: %w", err)
 	}
