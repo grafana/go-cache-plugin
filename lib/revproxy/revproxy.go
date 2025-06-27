@@ -35,7 +35,7 @@ import (
 	"github.com/creachadair/mds/mapset"
 	"github.com/creachadair/scheddle"
 	"github.com/creachadair/taskgroup"
-	"github.com/grafana/hackathon-13-go-cache-plugin/lib/s3util"
+	"github.com/grafana/go-cache-plugin/lib/s3util"
 )
 
 // Server is a caching reverse proxy server that caches successful responses to

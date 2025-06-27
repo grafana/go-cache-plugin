@@ -12,7 +12,7 @@ import (
 
 	"github.com/creachadair/command"
 	"github.com/creachadair/flax"
-	"github.com/grafana/hackathon-13-go-cache-plugin/lib/s3util"
+	"github.com/grafana/go-cache-plugin/lib/s3util"
 )
 
 func main() {
