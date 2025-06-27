@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -61,7 +62,7 @@ func runDirect(env *command.Env) error {
 }
 
 var serveFlags struct {
-	Plugin   int    `flag:"plugin,default=$GOCACHE_PLUGIN,Plugin service port (required)"`
+	Plugin   string `flag:"plugin,default=$GOCACHE_PLUGIN,Plugin service addr (or port) (required)"`
 	HTTP     string `flag:"http,default=$GOCACHE_HTTP,HTTP service address ([host]:port)"`
 	ModProxy bool   `flag:"modproxy,default=$GOCACHE_MODPROXY,Enable a Go module proxy (requires --http)"`
 	RevProxy string `flag:"revproxy,default=$GOCACHE_REVPROXY,Reverse proxy these hosts (comma-separated; requires --http)"`
@@ -72,8 +73,8 @@ func noopClose(context.Context) error { return nil }
 
 // runServe runs a cache communicating over a local TCP socket.
 func runServe(env *command.Env) error {
-	if serveFlags.Plugin <= 0 {
-		return env.Usagef("you must provide a --plugin port")
+	if serveFlags.Plugin == "" {
+		return env.Usagef("you must provide a --plugin addr (or port)")
 	}
 
 	// Initialize the cache server. Unlike a direct server, only close down and
@@ -85,8 +86,13 @@ func runServe(env *command.Env) error {
 	closeHook := s.Close
 	s.Close = noopClose
 
+	pluginAddr := serveFlags.Plugin
+	if !strings.Contains(pluginAddr, ":") {
+		pluginAddr = fmt.Sprintf("127.0.0.1:%s", serveFlags.Plugin)
+	}
+
 	// Listen for connections from the Go toolchain on the specified socket.
-	lst, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", serveFlags.Plugin))
+	lst, err := net.Listen("tcp", pluginAddr)
 	if err != nil {
 		return fmt.Errorf("listen: %w", err)
 	}
