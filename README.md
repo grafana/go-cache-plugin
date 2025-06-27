@@ -1,14 +1,23 @@
 # go-cache-plugin
 
-[![GoDoc](https://img.shields.io/static/v1?label=godoc&message=reference&color=lightgrey)](https://pkg.go.dev/github.com/grafana/hackathon-13-go-cache-plugin)
-[![CI](https://github.com/grafana/hackathon-13-go-cache-plugin/actions/workflows/go-presubmit.yml/badge.svg?event=push&branch=main)](https://github.com/grafana/hackathon-13-go-cache-plugin/actions/workflows/go-presubmit.yml)
+[![GoDoc](https://img.shields.io/static/v1?label=godoc&message=reference&color=lightgrey)](https://pkg.go.dev/github.com/grafana/go-cache-plugin)
+[![CI](https://github.com/grafana/go-cache-plugin/actions/workflows/go-presubmit.yml/badge.svg?event=push&branch=main)](https://github.com/grafana/go-cache-plugin/actions/workflows/go-presubmit.yml)
 
 This repository defines a tool implementing a `GOCACHEPROG` plugin backed by Amazon S3.
+
+## Fork
+
+This is a fork of Tailscale's repository -- thanks for your work!
+
+We do not currently intend on doing anything differently from Tailscale.
+There are no features planned that Tailscale's product does not offer.
+
+We only have this fork to get pre-built binaries into our runners.
 
 ## Installation
 
 ```shell
-go install github.com/grafana/hackathon-13-go-cache-plugin/cmd/go-cache-plugin@latest
+go install github.com/grafana/go-cache-plugin/cmd/go-cache-plugin@latest
 ```
 
 ## Usage Outline

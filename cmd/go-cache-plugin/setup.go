@@ -28,10 +28,10 @@ import (
 	"github.com/creachadair/taskgroup"
 	"github.com/creachadair/tlsutil"
 	"github.com/goproxy/goproxy"
-	"github.com/grafana/hackathon-13-go-cache-plugin/lib/gobuild"
-	"github.com/grafana/hackathon-13-go-cache-plugin/lib/modproxy"
-	"github.com/grafana/hackathon-13-go-cache-plugin/lib/revproxy"
-	"github.com/grafana/hackathon-13-go-cache-plugin/lib/s3util"
+	"github.com/grafana/go-cache-plugin/lib/gobuild"
+	"github.com/grafana/go-cache-plugin/lib/modproxy"
+	"github.com/grafana/go-cache-plugin/lib/revproxy"
+	"github.com/grafana/go-cache-plugin/lib/s3util"
 	"tailscale.com/tsweb"
 )
 
