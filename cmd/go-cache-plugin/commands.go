@@ -25,10 +25,12 @@ import (
 
 var flags struct {
 	CacheDir      string        `flag:"cache-dir,default=$GOCACHE_DIR,Local cache directory (required)"`
-	S3Bucket      string        `flag:"bucket,default=$GOCACHE_S3_BUCKET,S3 bucket name (required)"`
+	LogFile       string        `flag:"log-file,default=trace.log,File used for logs"`
+	S3Bucket      string        `flag:"bucket,default=$GOCACHE_S3_BUCKET,S3 bucket name (required if no --local flag provided)"`
 	S3Region      string        `flag:"region,default=$GOCACHE_S3_REGION,S3 region"`
 	S3Endpoint    string        `flag:"s3-endpoint-url,default=$GOCACHE_S3_ENDPOINT_URL,S3 custom endpoint URL (if unset, use AWS default)"`
 	S3PathStyle   bool          `flag:"s3-path-style,default=$GOCACHE_S3_PATH_STYLE,S3 path-style URLs (optional)"`
+	LocalCache    bool          `flag:"local,default=false,Runs cache in local mode (no S3)"`
 	KeyPrefix     string        `flag:"prefix,default=$GOCACHE_KEY_PREFIX,S3 key prefix (optional)"`
 	MinUploadSize int64         `flag:"min-upload-size,default=$GOCACHE_MIN_SIZE,Minimum object size to upload to S3 (in bytes)"`
 	Concurrency   int           `flag:"c,default=$GOCACHE_CONCURRENCY,Maximum number of concurrent requests"`
@@ -69,6 +71,8 @@ var serveFlags struct {
 	SumDB    string `flag:"sumdb,default=$GOCACHE_SUMDB,SumDB servers to proxy for (comma-separated)"`
 }
 
+var logger *log.Logger
+
 func noopClose(context.Context) error { return nil }
 
 // runServe runs a cache communicating over a local TCP socket.
@@ -76,6 +80,14 @@ func runServe(env *command.Env) error {
 	if serveFlags.Plugin == "" {
 		return env.Usagef("you must provide a --plugin addr (or port)")
 	}
+
+	f, err := os.OpenFile(flags.LogFile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	if err != nil {
+		log.Fatalf("error opening file: %v", err)
+	}
+	defer f.Close()
+
+	logger = log.New(f, "", log.LstdFlags)
 
 	// Initialize the cache server. Unlike a direct server, only close down and
 	// wait for cache cleanup when the whole process exits.

@@ -39,7 +39,37 @@ func initCacheServer(env *command.Env) (*gocache.Server, *s3util.Client, error) 
 	switch {
 	case flags.CacheDir == "":
 		return nil, nil, env.Usagef("you must provide a --cache-dir")
-	case flags.S3Bucket == "":
+	case flags.LocalCache:
+		dir, err := cachedir.New(flags.CacheDir)
+		if err != nil {
+			return nil, nil, fmt.Errorf("create local cache: %w", err)
+		}
+		cache := &gobuild.LocalCache{
+			Local:  dir,
+			Logger: logger,
+		}
+
+		close := cache.Close
+		if flags.Expiration > 0 {
+			dirClose := dir.Cleanup(flags.Expiration)
+			close = func(ctx context.Context) error {
+				return errors.Join(cache.Close(ctx), dirClose(ctx))
+			}
+		}
+
+		setMetrics := func(ctx context.Context, m *expvar.Map) {}
+		s := &gocache.Server{
+			Get:         cache.Get,
+			Put:         cache.Put,
+			Close:       close,
+			SetMetrics:  setMetrics,
+			MaxRequests: flags.Concurrency,
+			Logf:        vprintf,
+			LogRequests: flags.DebugLog&debugBuildCache != 0,
+		}
+		return s, nil, nil
+
+	case flags.S3Bucket == "" && !flags.LocalCache:
 		return nil, nil, env.Usagef("you must provide an S3 --bucket name")
 	}
 	region, err := getBucketRegion(env.Context(), flags.S3Bucket)
@@ -116,23 +146,36 @@ func initModProxy(env *command.Env, s3c *s3util.Client) (_ http.Handler, cleanup
 	if err := os.MkdirAll(modCachePath, 0755); err != nil {
 		return nil, nil, fmt.Errorf("create module cache: %w", err)
 	}
-	cacher := &modproxy.S3Cacher{
-		Local:       modCachePath,
-		S3Client:    s3c,
-		KeyPrefix:   path.Join(flags.KeyPrefix, "module"),
-		MaxTasks:    flags.S3Concurrency,
-		Logf:        vprintf,
-		LogRequests: flags.DebugLog&debugModProxy != 0,
+
+	var cacher goproxy.Cacher
+	var metrics func() *expvar.Map
+	if s3c != nil {
+		cacher := &modproxy.S3Cacher{
+			Local:       modCachePath,
+			S3Client:    s3c,
+			KeyPrefix:   path.Join(flags.KeyPrefix, "module"),
+			MaxTasks:    flags.S3Concurrency,
+			Logf:        vprintf,
+			LogRequests: flags.DebugLog&debugModProxy != 0,
+		}
+		cleanup = func() { vprintf("close cacher (err=%v)", cacher.Close()) }
+		metrics = cacher.Metrics
+	} else {
+		cache := modproxy.NowLocalModCacher(modCachePath, logger)
+		metrics = cache.Metrics
+		cacher = cache
 	}
-	cleanup = func() { vprintf("close cacher (err=%v)", cacher.Close()) }
 	proxy := &goproxy.Goproxy{
-		Fetcher: &goproxy.GoFetcher{
-			// As configured, the fetcher should never shell out to the go
-			// tool. Specifically, because we set GOPROXY and do not set any
-			// bypass via GONOPROXY, GOPRIVATE, etc., we will only attempt to
-			// proxy for the specific server(s) listed in Env.
-			GoBin: "/bin/false",
-			Env:   []string{"GOPROXY=https://proxy.golang.org"},
+		Fetcher: &modproxy.LoggingGoFetcher{
+			Delegate: &goproxy.GoFetcher{
+				// As configured, the fetcher should never shell out to the go
+				// tool. Specifically, because we set GOPROXY and do not set any
+				// bypass via GONOPROXY, GOPRIVATE, etc., we will only attempt to
+				// proxy for the specific server(s) listed in Env.
+				GoBin: "/bin/false",
+				Env:   []string{"GOPROXY=https://proxy.golang.org"},
+			},
+			Logger: logger,
 		},
 		Cacher:        cacher,
 		ProxiedSumDBs: []string{"sum.golang.org"}, // default, see below
@@ -142,7 +185,7 @@ func initModProxy(env *command.Env, s3c *s3util.Client) (_ http.Handler, cleanup
 		proxy.ProxiedSumDBs = strings.Split(serveFlags.SumDB, ",")
 		vprintf("enabling sum DB proxy for %s", strings.Join(proxy.ProxiedSumDBs, ", "))
 	}
-	expvar.Publish("modcache", cacher.Metrics())
+	expvar.Publish("modcache", metrics())
 	return http.StripPrefix("/mod", proxy), cleanup, nil
 }
 
