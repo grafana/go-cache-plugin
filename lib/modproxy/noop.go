@@ -4,6 +4,7 @@ import (
 	"expvar"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"time"
 
@@ -15,7 +16,7 @@ type NoopCacher struct {
 }
 
 func (n *NoopCacher) Get(ctx context.Context, name string) (io.ReadCloser, error) {
-	return nil, nil
+	return nil, fs.ErrNotExist
 }
 
 func (n *NoopCacher) Put(ctx context.Context, name string, content io.ReadSeeker) error {

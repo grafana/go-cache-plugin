@@ -147,7 +147,7 @@ func initModProxy(env *command.Env, s3c *s3util.Client) (_ http.Handler, cleanup
 		return nil, nil, fmt.Errorf("create module cache: %w", err)
 	}
 
-	var cacher goproxy.Cacher
+	var cacher goproxy.Cacher = nil
 	var metrics func() *expvar.Map
 	if s3c != nil {
 		cacher := &modproxy.S3Cacher{
@@ -162,9 +162,11 @@ func initModProxy(env *command.Env, s3c *s3util.Client) (_ http.Handler, cleanup
 		metrics = cacher.Metrics
 	} else {
 		//cache := modproxy.NewLocalModCacher(modCachePath, logger)
-		cache := modproxy.NewNoopModCacher(logger)
-		metrics = cache.Metrics
-		cacher = cache
+		//cache := modproxy.NewNoopModCacher(logger)
+		//metrics = cache.Metrics
+		//cacher = cache
+		//metrics = func() { return &expvar.Map{} }
+		metrics = func() *expvar.Map { return &expvar.Map{} }
 	}
 	proxy := &goproxy.Goproxy{
 		Fetcher: &modproxy.LoggingGoFetcher{
