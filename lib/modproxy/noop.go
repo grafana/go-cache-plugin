@@ -11,13 +11,28 @@ import (
 	"golang.org/x/net/context"
 )
 
+type NoopCacher struct {
+}
+
+func (n *NoopCacher) Get(ctx context.Context, name string) (io.ReadCloser, error) {
+	return nil, nil
+}
+
+func (n *NoopCacher) Put(ctx context.Context, name string, content io.ReadSeeker) error {
+	return nil
+}
+
 type LocalCache struct {
-	Local  goproxy.DirCacher
+	Local  goproxy.Cacher
 	Logger *log.Logger
 }
 
-func NowLocalModCacher(path string, logger *log.Logger) *LocalCache {
+func NewLocalModCacher(path string, logger *log.Logger) *LocalCache {
 	return &LocalCache{Local: goproxy.DirCacher(path), Logger: logger}
+}
+
+func NewNoopModCacher(logger *log.Logger) *LocalCache {
+	return &LocalCache{Local: &NoopCacher{}, Logger: logger}
 }
 
 func (l *LocalCache) Get(ctx context.Context, name string) (io.ReadCloser, error) {

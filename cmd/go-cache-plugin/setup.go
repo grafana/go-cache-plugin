@@ -161,7 +161,8 @@ func initModProxy(env *command.Env, s3c *s3util.Client) (_ http.Handler, cleanup
 		cleanup = func() { vprintf("close cacher (err=%v)", cacher.Close()) }
 		metrics = cacher.Metrics
 	} else {
-		cache := modproxy.NowLocalModCacher(modCachePath, logger)
+		//cache := modproxy.NewLocalModCacher(modCachePath, logger)
+		cache := modproxy.NewNoopModCacher(logger)
 		metrics = cache.Metrics
 		cacher = cache
 	}
