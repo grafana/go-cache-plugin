@@ -11,6 +11,9 @@ import (
 	"errors"
 	"expvar"
 	"fmt"
+	"github.com/grafana/go-cache-plugin/lib/otel"
+	"go.opentelemetry.io/auto/sdk"
+	"go.opentelemetry.io/otel/sdk/trace"
 	"net/http"
 	"os"
 	"path"
@@ -44,9 +47,12 @@ func initCacheServer(env *command.Env) (*gocache.Server, *s3util.Client, error) 
 		if err != nil {
 			return nil, nil, fmt.Errorf("create local cache: %w", err)
 		}
+
+		sdk.TracerProvider()
+		trace.NewTracerProvider()
 		cache := &gobuild.LocalCache{
 			Local:  dir,
-			Logger: logger,
+			Tracer: otel.NewTracedFromString(flags.TracingParams),
 		}
 
 		close := cache.Close
@@ -178,7 +184,7 @@ func initModProxy(env *command.Env, s3c *s3util.Client) (_ http.Handler, cleanup
 				GoBin: "/bin/false",
 				Env:   []string{"GOPROXY=https://proxy.golang.org"},
 			},
-			Logger: logger,
+			Tracer: otel.NewTracedFromString(flags.TracingParams),
 		},
 		Cacher:        cacher,
 		ProxiedSumDBs: []string{"sum.golang.org"}, // default, see below

@@ -1,11 +1,10 @@
 package gobuild
 
 import (
-	"log"
-	"time"
-
 	"github.com/creachadair/gocache"
 	"github.com/creachadair/gocache/cachedir"
+	"github.com/grafana/go-cache-plugin/lib/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"golang.org/x/net/context"
 )
 
@@ -17,23 +16,26 @@ type TheCache interface {
 
 type LocalCache struct {
 	Local  *cachedir.Dir
-	Logger *log.Logger
+	Tracer *otel.TraceMeta
 }
 
 func (l *LocalCache) Get(ctx context.Context, actionID string) (outputID, diskPath string, _ error) {
-	defer l.logOperation("Get", actionID, time.Now())
+	_, span := l.Tracer.SpanWithContext(ctx, "BUILD-GET", attribute.KeyValue{Key: "action_id", Value: attribute.StringValue(actionID)})
+	defer func() {
+		span.End()
+	}()
+
 	return l.Local.Get(ctx, actionID)
 }
 
 func (l *LocalCache) Put(ctx context.Context, obj gocache.Object) (diskPath string, _ error) {
-	defer l.logOperation("Put", obj.ActionID, time.Now())
+	_, span := l.Tracer.SpanWithContext(ctx, "BUILD-PUT", attribute.KeyValue{Key: "action_id", Value: attribute.StringValue(obj.ActionID)})
+	defer func() {
+		span.End()
+	}()
 	return l.Local.Put(ctx, obj)
 }
 
 func (l *LocalCache) Close(ctx context.Context) error {
 	return nil
-}
-
-func (l *LocalCache) logOperation(op, name string, start time.Time) {
-	l.Logger.Printf("GOBUILD %s -> finished operation for %s in %v", op, name, time.Since(start))
 }

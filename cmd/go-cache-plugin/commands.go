@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/grafana/go-cache-plugin/lib/otel"
 	"io"
 	"log"
 	"net"
@@ -39,6 +40,7 @@ var flags struct {
 	Expiration    time.Duration `flag:"expiry,default=$GOCACHE_EXPIRY,Cache expiration period (optional)"`
 	Verbose       bool          `flag:"v,default=$GOCACHE_VERBOSE,Enable verbose logging"`
 	DebugLog      int           `flag:"debug,default=$GOCACHE_DEBUG,Enable detailed per-request debug logging (noisy)"`
+	TracingParams string        `flag:"tracing,default=runId:runAttempt:jobName:stepName,Tracing params"`
 }
 
 const (
@@ -81,14 +83,7 @@ func runServe(env *command.Env) error {
 		return env.Usagef("you must provide a --plugin addr (or port)")
 	}
 
-	f, err := os.OpenFile(flags.LogFile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
-	if err != nil {
-		log.Fatalf("error opening file: %v", err)
-	}
-	defer f.Close()
-
-	logger = log.New(f, "", log.LstdFlags)
-
+	otel.Init(context.Background(), otel.Config{Mode: otel.ModeStdout, LogFile: flags.LogFile})
 	// Initialize the cache server. Unlike a direct server, only close down and
 	// wait for cache cleanup when the whole process exits.
 	s, s3c, err := initCacheServer(env)
