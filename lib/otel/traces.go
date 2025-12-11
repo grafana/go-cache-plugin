@@ -16,27 +16,29 @@ type TraceMeta struct {
 	RunAttempt string
 	JobName    string
 	StepName   string
+	StepNumber string
 }
 
 func NewTracedFromString(traceParams string) *TraceMeta {
 	parts := strings.Split(traceParams, ":")
-	runId, runAttempt, jobName, stepName := parts[0], parts[1], parts[2], parts[3]
+	runId, runAttempt, jobName, stepName, stepNumber := parts[0], parts[1], parts[2], parts[3], parts[4]
 
-	return NewTracer(runId, runAttempt, jobName, stepName)
+	return NewTracer(runId, runAttempt, jobName, stepName, stepNumber)
 }
 
-func NewTracer(runId, runAttempt, jobName, stepName string) *TraceMeta {
-	return &TraceMeta{RunId: runId, RunAttempt: runAttempt, JobName: jobName, StepName: stepName}
+func NewTracer(runId, runAttempt, jobName, stepName, stepNumber string) *TraceMeta {
+	return &TraceMeta{RunId: runId, RunAttempt: runAttempt, JobName: jobName, StepName: stepName, StepNumber: stepNumber}
 }
 
 func (t *TraceMeta) SpanWithContext(context context.Context, name string, attributes ...attribute.KeyValue) (context.Context, trace.Span) {
 	traceId, _ := trace.TraceIDFromHex(t.GenerateTraceID())
-	parentSpan, _ := trace.SpanIDFromHex(t.GenerateStepSpanID())
+	parentSpan, _ := trace.SpanIDFromHex(t.GenerateStepSpanID_Number())
 
 	spanContext := trace.NewSpanContext(trace.SpanContextConfig{
 		TraceID:    traceId,
 		SpanID:     parentSpan,
 		TraceFlags: trace.FlagsSampled,
+		Remote:     true,
 	})
 
 	ctx := trace.ContextWithSpanContext(context, spanContext)
@@ -62,20 +64,36 @@ func (t *TraceMeta) GenerateStepSpanID() string {
 	return GenerateStepSpanID(t.RunId, t.RunAttempt, t.JobName, t.StepName)
 }
 
+func (t *TraceMeta) GenerateStepSpanID_Number() string {
+	return GenerateStepSpanID_Number(t.RunId, t.RunAttempt, t.JobName, t.StepNumber)
+}
+
 func GenerateTraceID(runID, runAttempt string) string {
 	input := fmt.Sprintf("%s%st", runID, runAttempt)
 	hash := sha256.Sum256([]byte(input))
 	return hex.EncodeToString(hash[:])[:32]
 }
 
+func GenerateParentSpanID(runID, runAttempt string) string {
+	input := fmt.Sprintf("%s%ss", runID, runAttempt)
+	hash := sha256.Sum256([]byte(input))
+	return hex.EncodeToString(hash[:])[16:32]
+}
+
 func GenerateJobSpanID(runID, runAttempt, jobName string) string {
 	input := fmt.Sprintf("%s%s%s", runID, runAttempt, jobName)
 	hash := sha256.Sum256([]byte(input))
-	return hex.EncodeToString(hash[:])[:16]
+	return hex.EncodeToString(hash[:])[16:32]
 }
 
 func GenerateStepSpanID(runID, runAttempt, jobName, stepName string) string {
 	input := fmt.Sprintf("%s%s%s%s", runID, runAttempt, jobName, stepName)
 	hash := sha256.Sum256([]byte(input))
-	return hex.EncodeToString(hash[:])[:16]
+	return hex.EncodeToString(hash[:])[16:32]
+}
+
+func GenerateStepSpanID_Number(runID, runAttempt, jobName, stepNumber string) string {
+	input := fmt.Sprintf("%s%s%s%s", runID, runAttempt, jobName, stepNumber)
+	hash := sha256.Sum256([]byte(input))
+	return hex.EncodeToString(hash[:])[16:32]
 }
