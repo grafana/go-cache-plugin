@@ -10,11 +10,13 @@ import (
 	"errors"
 	"fmt"
 	"github.com/grafana/go-cache-plugin/lib/otel"
+	"github.com/grafana/go-cache-plugin/lib/toolexec"
 	"io"
 	"log"
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"strconv"
 	"strings"
@@ -78,7 +80,12 @@ var serveFlags struct {
 	SumDB      string `flag:"sumdb,default=$GOCACHE_SUMDB,SumDB servers to proxy for (comma-separated)"`
 }
 
-var logger *log.Logger
+var toolexecFlags struct {
+	LogFile              string `flag:"log-file,default=trace.log,File used for logs"`
+	TracingEnabled       bool   `flag:"tracing,default=false,Enable tracing (optional)"`
+	TracingContext       string `flag:"context,default=runId:runAttempt:jobName:stepName:stepNumber,Tracing params"`
+	OtelCollectorAddress string `flag:"otel-collector,default,OTEL collector address (optional)"`
+}
 
 func noopClose(context.Context) error { return nil }
 
@@ -189,7 +196,9 @@ func runConnect(env *command.Env, plugin string) error {
 
 	ctx := env.Context()
 	shutdownTracer, reportSpan, err := initTracing(ctx)
-
+	if err != nil {
+		return err
+	}
 	addr := plugin
 	// If the caller has not specified a host/port, then likely this is an older usage which only specifies port
 	if !strings.Contains(plugin, ":") {
@@ -222,6 +231,27 @@ func runConnect(env *command.Env, plugin string) error {
 	println("@@@@@ - connection closed @@@@@")
 	println(fmt.Sprintf("connection closed (%v elapsed)", time.Since(start)))
 	return nil
+}
+
+func runToolexec(env *command.Env) error {
+	ctx := env.Context()
+	shutdownTracer, tracingContext, err := initModTracing(ctx)
+	if err != nil {
+		return err
+	}
+	defer shutdownTracer(ctx)
+
+	tool := os.Args[1]
+	args := os.Args[2:]
+
+	pkg := toolexec.GetPackage(os.Args)
+
+	_, span := tracingContext.SpanWithContext(ctx, fmt.Sprintf("%s: %s", toolexec.GetTool(tool), pkg))
+	defer span.End()
+	cmd := exec.Command(tool, args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
 }
 
 func initTracing(ctx context.Context) (func(context.Context) error, func([]byte), error) {
