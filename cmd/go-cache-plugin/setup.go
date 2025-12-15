@@ -11,9 +11,7 @@ import (
 	"errors"
 	"expvar"
 	"fmt"
-	"github.com/grafana/go-cache-plugin/lib/otel"
-	"go.opentelemetry.io/auto/sdk"
-	"go.opentelemetry.io/otel/sdk/trace"
+	"log"
 	"net/http"
 	"os"
 	"path"
@@ -43,31 +41,24 @@ func initCacheServer(env *command.Env) (*gocache.Server, *s3util.Client, error) 
 	case flags.CacheDir == "":
 		return nil, nil, env.Usagef("you must provide a --cache-dir")
 	case flags.LocalCache:
-		dir, err := cachedir.New(flags.CacheDir)
+		dirCache, err := cachedir.New(flags.CacheDir)
 		if err != nil {
 			return nil, nil, fmt.Errorf("create local cache: %w", err)
 		}
 
-		sdk.TracerProvider()
-		trace.NewTracerProvider()
-		cache := &gobuild.LocalCache{
-			Local:  dir,
-			Tracer: otel.NewTracedFromString(flags.TracingParams),
-		}
-
-		close := cache.Close
+		cacheClose := func(context.Context) error { return nil }
 		if flags.Expiration > 0 {
-			dirClose := dir.Cleanup(flags.Expiration)
-			close = func(ctx context.Context) error {
-				return errors.Join(cache.Close(ctx), dirClose(ctx))
+			dirClose := dirCache.Cleanup(flags.Expiration)
+			cacheClose = func(ctx context.Context) error {
+				return errors.Join(dirClose(ctx))
 			}
 		}
 
 		setMetrics := func(ctx context.Context, m *expvar.Map) {}
 		s := &gocache.Server{
-			Get:         cache.Get,
-			Put:         cache.Put,
-			Close:       close,
+			Get:         dirCache.Get,
+			Put:         dirCache.Put,
+			Close:       cacheClose,
 			SetMetrics:  setMetrics,
 			MaxRequests: flags.Concurrency,
 			Logf:        vprintf,
@@ -76,7 +67,7 @@ func initCacheServer(env *command.Env) (*gocache.Server, *s3util.Client, error) 
 		return s, nil, nil
 
 	case flags.S3Bucket == "" && !flags.LocalCache:
-		return nil, nil, env.Usagef("you must provide an S3 --bucket name")
+		return nil, nil, env.Usagef("you must provide an S3 --bucket name or run with --no-cache")
 	}
 	region, err := getBucketRegion(env.Context(), flags.S3Bucket)
 	if err != nil {
@@ -148,14 +139,18 @@ func initModProxy(env *command.Env, s3c *s3util.Client) (_ http.Handler, cleanup
 		return nil, nil, env.Usagef("you must set --http to enable --modproxy")
 	}
 
-	modCachePath := filepath.Join(flags.CacheDir, "module")
-	if err := os.MkdirAll(modCachePath, 0755); err != nil {
-		return nil, nil, fmt.Errorf("create module cache: %w", err)
+	if s3c == nil && !flags.LocalCache {
+		return nil, nil, errors.New("s3 client not configured")
 	}
 
 	var cacher goproxy.Cacher = nil
-	var metrics func() *expvar.Map
+	var metrics = func() *expvar.Map { return &expvar.Map{} }
 	if s3c != nil {
+		modCachePath := filepath.Join(flags.CacheDir, "module")
+		if err := os.MkdirAll(modCachePath, 0755); err != nil {
+			return nil, nil, fmt.Errorf("create module cache: %w", err)
+		}
+
 		cacher := &modproxy.S3Cacher{
 			Local:       modCachePath,
 			S3Client:    s3c,
@@ -166,25 +161,16 @@ func initModProxy(env *command.Env, s3c *s3util.Client) (_ http.Handler, cleanup
 		}
 		cleanup = func() { vprintf("close cacher (err=%v)", cacher.Close()) }
 		metrics = cacher.Metrics
-	} else {
-		//cache := modproxy.NewLocalModCacher(modCachePath, logger)
-		//cache := modproxy.NewNoopModCacher(logger)
-		//metrics = cache.Metrics
-		//cacher = cache
-		//metrics = func() { return &expvar.Map{} }
-		metrics = func() *expvar.Map { return &expvar.Map{} }
 	}
+
 	proxy := &goproxy.Goproxy{
-		Fetcher: &modproxy.LoggingGoFetcher{
-			Delegate: &goproxy.GoFetcher{
-				// As configured, the fetcher should never shell out to the go
-				// tool. Specifically, because we set GOPROXY and do not set any
-				// bypass via GONOPROXY, GOPRIVATE, etc., we will only attempt to
-				// proxy for the specific server(s) listed in Env.
-				GoBin: "/bin/false",
-				Env:   []string{"GOPROXY=https://proxy.golang.org"},
-			},
-			Tracer: otel.NewTracedFromString(flags.TracingParams),
+		Fetcher: &goproxy.GoFetcher{
+			// As configured, the fetcher should never shell out to the go
+			// tool. Specifically, because we set GOPROXY and do not set any
+			// bypass via GONOPROXY, GOPRIVATE, etc., we will only attempt to
+			// proxy for the specific server(s) listed in Env.
+			GoBin: "/bin/false",
+			Env:   []string{"GOPROXY=https://proxy.golang.org"},
 		},
 		Cacher:        cacher,
 		ProxiedSumDBs: []string{"sum.golang.org"}, // default, see below
@@ -341,6 +327,7 @@ func makeHandler(modProxy, revProxy http.Handler) http.HandlerFunc {
 			return
 		}
 		if modProxy != nil && r.Method == http.MethodGet && strings.HasPrefix(path, "/mod/") {
+			log.Printf("proxying %s %s", r.Method, r.URL.Path)
 			modProxy.ServeHTTP(w, r)
 			return
 		}

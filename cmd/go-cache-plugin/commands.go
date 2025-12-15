@@ -4,7 +4,9 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/grafana/go-cache-plugin/lib/otel"
@@ -25,22 +27,24 @@ import (
 )
 
 var flags struct {
-	CacheDir      string        `flag:"cache-dir,default=$GOCACHE_DIR,Local cache directory (required)"`
-	LogFile       string        `flag:"log-file,default=trace.log,File used for logs"`
-	S3Bucket      string        `flag:"bucket,default=$GOCACHE_S3_BUCKET,S3 bucket name (required if no --local flag provided)"`
-	S3Region      string        `flag:"region,default=$GOCACHE_S3_REGION,S3 region"`
-	S3Endpoint    string        `flag:"s3-endpoint-url,default=$GOCACHE_S3_ENDPOINT_URL,S3 custom endpoint URL (if unset, use AWS default)"`
-	S3PathStyle   bool          `flag:"s3-path-style,default=$GOCACHE_S3_PATH_STYLE,S3 path-style URLs (optional)"`
-	LocalCache    bool          `flag:"local,default=false,Runs cache in local mode (no S3)"`
-	KeyPrefix     string        `flag:"prefix,default=$GOCACHE_KEY_PREFIX,S3 key prefix (optional)"`
-	MinUploadSize int64         `flag:"min-upload-size,default=$GOCACHE_MIN_SIZE,Minimum object size to upload to S3 (in bytes)"`
-	Concurrency   int           `flag:"c,default=$GOCACHE_CONCURRENCY,Maximum number of concurrent requests"`
-	S3Concurrency int           `flag:"u,default=$GOCACHE_S3_CONCURRENCY,Maximum concurrency for upload to S3"`
-	PrintMetrics  bool          `flag:"metrics,default=$GOCACHE_METRICS,Print summary metrics to stderr at exit"`
-	Expiration    time.Duration `flag:"expiry,default=$GOCACHE_EXPIRY,Cache expiration period (optional)"`
-	Verbose       bool          `flag:"v,default=$GOCACHE_VERBOSE,Enable verbose logging"`
-	DebugLog      int           `flag:"debug,default=$GOCACHE_DEBUG,Enable detailed per-request debug logging (noisy)"`
-	TracingParams string        `flag:"tracing,default=runId:runAttempt:jobName:stepName,Tracing params"`
+	CacheDir             string        `flag:"cache-dir,default=$GOCACHE_DIR,Local cache directory (required)"`
+	LogFile              string        `flag:"log-file,default=trace.log,File used for logs"`
+	S3Bucket             string        `flag:"bucket,default=$GOCACHE_S3_BUCKET,S3 bucket name (required if no --local flag provided)"`
+	S3Region             string        `flag:"region,default=$GOCACHE_S3_REGION,S3 region"`
+	S3Endpoint           string        `flag:"s3-endpoint-url,default=$GOCACHE_S3_ENDPOINT_URL,S3 custom endpoint URL (if unset, use AWS default)"`
+	S3PathStyle          bool          `flag:"s3-path-style,default=$GOCACHE_S3_PATH_STYLE,S3 path-style URLs (optional)"`
+	LocalCache           bool          `flag:"local-cache,default=false,Runs in no cache mode (no S3)"`
+	KeyPrefix            string        `flag:"prefix,default=$GOCACHE_KEY_PREFIX,S3 key prefix (optional)"`
+	MinUploadSize        int64         `flag:"min-upload-size,default=$GOCACHE_MIN_SIZE,Minimum object size to upload to S3 (in bytes)"`
+	Concurrency          int           `flag:"c,default=$GOCACHE_CONCURRENCY,Maximum number of concurrent requests"`
+	S3Concurrency        int           `flag:"u,default=$GOCACHE_S3_CONCURRENCY,Maximum concurrency for upload to S3"`
+	PrintMetrics         bool          `flag:"metrics,default=$GOCACHE_METRICS,Print summary metrics to stderr at exit"`
+	Expiration           time.Duration `flag:"expiry,default=$GOCACHE_EXPIRY,Cache expiration period (optional)"`
+	Verbose              bool          `flag:"v,default=$GOCACHE_VERBOSE,Enable verbose logging"`
+	DebugLog             int           `flag:"debug,default=$GOCACHE_DEBUG,Enable detailed per-request debug logging (noisy)"`
+	TracingEnabled       bool          `flag:"tracing,default=false,Enable tracing (optional)"`
+	TracingContext       string        `flag:"context,default=runId:runAttempt:jobName:stepName:stepNumber,Tracing params"`
+	OtelCollectorAddress string        `flag:"otel-collector,default,OTEL collector address (optional)"`
 }
 
 const (
@@ -66,11 +70,12 @@ func runDirect(env *command.Env) error {
 }
 
 var serveFlags struct {
-	Plugin   string `flag:"plugin,default=$GOCACHE_PLUGIN,Plugin service addr (or port) (required)"`
-	HTTP     string `flag:"http,default=$GOCACHE_HTTP,HTTP service address ([host]:port)"`
-	ModProxy bool   `flag:"modproxy,default=$GOCACHE_MODPROXY,Enable a Go module proxy (requires --http)"`
-	RevProxy string `flag:"revproxy,default=$GOCACHE_REVPROXY,Reverse proxy these hosts (comma-separated; requires --http)"`
-	SumDB    string `flag:"sumdb,default=$GOCACHE_SUMDB,SumDB servers to proxy for (comma-separated)"`
+	Plugin     string `flag:"plugin,default=$GOCACHE_PLUGIN,Plugin service addr (or port) (required)"`
+	HTTP       string `flag:"http,default=$GOCACHE_HTTP,HTTP service address ([host]:port)"`
+	ModProxy   bool   `flag:"modproxy,default=$GOCACHE_MODPROXY,Enable a Go module proxy (requires --http)"`
+	ModNoCache bool   `flag:"mod-nocache,default=false,Disable the local module cache (requires --modproxy)"`
+	RevProxy   string `flag:"revproxy,default=$GOCACHE_REVPROXY,Reverse proxy these hosts (comma-separated; requires --http)"`
+	SumDB      string `flag:"sumdb,default=$GOCACHE_SUMDB,SumDB servers to proxy for (comma-separated)"`
 }
 
 var logger *log.Logger
@@ -83,7 +88,7 @@ func runServe(env *command.Env) error {
 		return env.Usagef("you must provide a --plugin addr (or port)")
 	}
 
-	otel.Init(context.Background(), otel.Config{Mode: otel.ModeStdout, LogFile: flags.LogFile})
+	log.Printf("Otel exporter initialized with address: %s", flags.OtelCollectorAddress)
 	// Initialize the cache server. Unlike a direct server, only close down and
 	// wait for cache cleanup when the whole process exits.
 	s, s3c, err := initCacheServer(env)
@@ -176,8 +181,11 @@ func runServe(env *command.Env) error {
 
 // runConnect implements a direct cache proxy by connecting to a remote server.
 func runConnect(env *command.Env, plugin string) error {
-	addr := plugin
 
+	ctx := env.Context()
+	shutdownTracer, reportSpan, err := initTracing(ctx)
+
+	addr := plugin
 	// If the caller has not specified a host/port, then likely this is an older usage which only specifies port
 	if !strings.Contains(plugin, ":") {
 		port, err := strconv.Atoi(plugin)
@@ -197,15 +205,53 @@ func runConnect(env *command.Env, plugin string) error {
 
 	out := taskgroup.Go(func() error {
 		defer conn.(*net.TCPConn).CloseWrite() // let the server finish
-		return copy(conn, os.Stdin)
+		return copy(conn, os.Stdin, reportSpan)
 	})
-	if rerr := copy(os.Stdout, conn); rerr != nil {
+	if rerr := copy(os.Stdout, conn, reportSpan); rerr != nil {
 		vprintf("read responses: %v", err)
 	}
 	out.Wait()
 	conn.Close()
-	vprintf("connection closed (%v elapsed)", time.Since(start))
+
+	shutdownTracer(context.Background())
+	println("@@@@@ - connection closed @@@@@")
+	println(fmt.Sprintf("connection closed (%v elapsed)", time.Since(start)))
 	return nil
+}
+
+func initTracing(ctx context.Context) (func(context.Context) error, func([]byte), error) {
+	if !flags.TracingEnabled {
+		return func(context.Context) error { return nil }, func([]byte) {}, nil
+	}
+
+	var shutdown func(context.Context) error
+	var err error
+	if flags.OtelCollectorAddress != "" {
+		shutdown, err = otel.SetupOtelTraceProvider(ctx, flags.OtelCollectorAddress)
+	} else if flags.LogFile != "" {
+		log.Printf("Otel Collector address not specified, starting with the logging reporter, log file: %s", flags.LogFile)
+		shutdown, err = otel.SetupLoggingProvider(ctx, flags.LogFile)
+	} else {
+		log.Printf("please specify either --otel-collector or --log-file to setup tracing or disable tracing")
+		return nil, nil, errors.New("otel exporter not initialized")
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+
+	tracingContext := otel.NewTracedFromString(flags.TracingContext)
+
+	spanner := otel.NewAwesomeSpanner(tracingContext)
+
+	spanReporter := func(buffer []byte) {
+		id, err := parseId(buffer[:])
+		if err != nil {
+			log.Printf("failed to parse id from buffer: %v", err)
+		}
+		spanner.ProcessId(ctx, id)
+	}
+
+	return shutdown, spanReporter, err
 }
 
 // copy emulates the base case of io.Copy, but does not attempt to use the
@@ -213,7 +259,7 @@ func runConnect(env *command.Env, plugin string) error {
 //
 // TODO(creachadair): For some reason io.Copy does not work correctly when r is
 // a pipe (e.g., stdin) and w is a TCP socket. Figure out why.
-func copy(w io.Writer, r io.Reader) error {
+func copy(w io.Writer, r io.Reader, reportTrace func([]byte)) error {
 	var buf [4096]byte
 	for {
 		nr, err := r.Read(buf[:])
@@ -223,6 +269,8 @@ func copy(w io.Writer, r io.Reader) error {
 			} else if nw < nr {
 				return fmt.Errorf("wrote %d < %d bytes: %w", nw, nr, io.ErrShortWrite)
 			}
+
+			reportTrace(buf[:])
 		}
 		if err == io.EOF {
 			return nil
@@ -230,4 +278,22 @@ func copy(w io.Writer, r io.Reader) error {
 			return fmt.Errorf("copy from: %w", err)
 		}
 	}
+}
+
+func parseId(buf []byte) (string, error) {
+	map1 := make(map[string]any)
+
+	err := json.Unmarshal(buf, &map1)
+	if err != nil {
+		slice, _, found := bytes.Cut(buf, []byte{'\n'})
+		if found {
+			err2 := json.Unmarshal(slice, &map1)
+			if err2 != nil {
+				return "", err
+			}
+		}
+	}
+
+	value := map1["ID"]
+	return fmt.Sprintf("map1 = %v", value), nil
 }

@@ -11,7 +11,7 @@ import (
 	"strings"
 )
 
-type TraceMeta struct {
+type TracingContext struct {
 	RunId      string
 	RunAttempt string
 	JobName    string
@@ -19,18 +19,18 @@ type TraceMeta struct {
 	StepNumber string
 }
 
-func NewTracedFromString(traceParams string) *TraceMeta {
+func NewTracedFromString(traceParams string) *TracingContext {
 	parts := strings.Split(traceParams, ":")
 	runId, runAttempt, jobName, stepName, stepNumber := parts[0], parts[1], parts[2], parts[3], parts[4]
 
 	return NewTracer(runId, runAttempt, jobName, stepName, stepNumber)
 }
 
-func NewTracer(runId, runAttempt, jobName, stepName, stepNumber string) *TraceMeta {
-	return &TraceMeta{RunId: runId, RunAttempt: runAttempt, JobName: jobName, StepName: stepName, StepNumber: stepNumber}
+func NewTracer(runId, runAttempt, jobName, stepName, stepNumber string) *TracingContext {
+	return &TracingContext{RunId: runId, RunAttempt: runAttempt, JobName: jobName, StepName: stepName, StepNumber: stepNumber}
 }
 
-func (t *TraceMeta) SpanWithContext(context context.Context, name string, attributes ...attribute.KeyValue) (context.Context, trace.Span) {
+func (t *TracingContext) SpanWithContext(context context.Context, name string, attributes ...attribute.KeyValue) (context.Context, trace.Span) {
 	traceId, _ := trace.TraceIDFromHex(t.GenerateTraceID())
 	parentSpan, _ := trace.SpanIDFromHex(t.GenerateStepSpanID_Number())
 
@@ -52,19 +52,19 @@ func (t *TraceMeta) SpanWithContext(context context.Context, name string, attrib
 	return start, span
 }
 
-func (t *TraceMeta) GenerateTraceID() string {
+func (t *TracingContext) GenerateTraceID() string {
 	return GenerateTraceID(t.RunId, t.RunAttempt)
 }
 
-func (t *TraceMeta) GenerateJobSpanID() string {
+func (t *TracingContext) GenerateJobSpanID() string {
 	return GenerateJobSpanID(t.RunId, t.RunAttempt, t.JobName)
 }
 
-func (t *TraceMeta) GenerateStepSpanID() string {
+func (t *TracingContext) GenerateStepSpanID() string {
 	return GenerateStepSpanID(t.RunId, t.RunAttempt, t.JobName, t.StepName)
 }
 
-func (t *TraceMeta) GenerateStepSpanID_Number() string {
+func (t *TracingContext) GenerateStepSpanID_Number() string {
 	return GenerateStepSpanID_Number(t.RunId, t.RunAttempt, t.JobName, t.StepNumber)
 }
 

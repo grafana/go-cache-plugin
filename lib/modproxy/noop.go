@@ -25,14 +25,14 @@ func (n *NoopCacher) Put(ctx context.Context, name string, content io.ReadSeeker
 
 type LocalCache struct {
 	Local  goproxy.Cacher
-	Tracer *otel.TraceMeta
+	Tracer *otel.TracingContext
 }
 
-func NewLocalModCacher(path string, tracer *otel.TraceMeta) *LocalCache {
+func NewLocalModCacher(path string, tracer *otel.TracingContext) *LocalCache {
 	return &LocalCache{Local: goproxy.DirCacher(path), Tracer: tracer}
 }
 
-func NewNoopModCacher(tracer *otel.TraceMeta) *LocalCache {
+func NewNoopModCacher(tracer *otel.TracingContext) *LocalCache {
 	return &LocalCache{Local: &NoopCacher{}, Tracer: tracer}
 }
 
@@ -59,7 +59,7 @@ func (l *LocalCache) Metrics() *expvar.Map {
 
 type LoggingGoFetcher struct {
 	Delegate goproxy.Fetcher
-	Tracer   *otel.TraceMeta
+	Tracer   *otel.TracingContext
 }
 
 func (l *LoggingGoFetcher) Query(ctx context.Context, path, query string) (string, time.Time, error) {
