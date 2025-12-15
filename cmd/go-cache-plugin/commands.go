@@ -88,7 +88,6 @@ func runServe(env *command.Env) error {
 		return env.Usagef("you must provide a --plugin addr (or port)")
 	}
 
-	log.Printf("Otel exporter initialized with address: %s", flags.OtelCollectorAddress)
 	// Initialize the cache server. Unlike a direct server, only close down and
 	// wait for cache cleanup when the whole process exits.
 	s, s3c, err := initCacheServer(env)
@@ -138,16 +137,22 @@ func runServe(env *command.Env) error {
 	// If an HTTP server is enabled, start it up with debug routes
 	// and whatever other services were requested.
 	if serveFlags.HTTP != "" {
+		otelCleanup, tracingContext, err := initModTracing(ctx)
+		if err != nil {
+			return fmt.Errorf("tracing: %w", err)
+		}
+
 		srv := &http.Server{
 			Addr:    serveFlags.HTTP,
-			Handler: makeHandler(modProxy, revProxy),
+			Handler: makeHandler(modProxy, revProxy, tracingContext),
 		}
 		g.Go(srv.ListenAndServe)
 		vprintf("HTTP server listening at %q", serveFlags.HTTP)
 		g.Run(func() {
 			<-ctx.Done()
+			_ = otelCleanup(ctx)
 			vprintf("stopping HTTP service")
-			srv.Shutdown(context.Background())
+			_ = srv.Shutdown(context.Background())
 		})
 	}
 
@@ -252,6 +257,27 @@ func initTracing(ctx context.Context) (func(context.Context) error, func([]byte)
 	}
 
 	return shutdown, spanReporter, err
+}
+func initModTracing(ctx context.Context) (func(context.Context) error, *otel.TracingContext, error) {
+	if !flags.TracingEnabled {
+		return func(context.Context) error { return nil }, nil, nil
+	}
+
+	var shutdown func(context.Context) error
+	var err error
+	if flags.OtelCollectorAddress != "" {
+		shutdown, err = otel.SetupOtelTraceProvider(ctx, flags.OtelCollectorAddress)
+	} else if flags.LogFile != "" {
+		log.Printf("Otel Collector address not specified, starting with the logging reporter, log file: %s", flags.LogFile)
+		shutdown, err = otel.SetupLoggingProvider(ctx, flags.LogFile)
+	} else {
+		log.Printf("please specify either --otel-collector or --log-file to setup tracing or disable tracing")
+		return nil, nil, errors.New("otel exporter not initialized")
+	}
+
+	tracingContext := otel.NewTracedFromString(flags.TracingContext)
+
+	return shutdown, tracingContext, err
 }
 
 // copy emulates the base case of io.Copy, but does not attempt to use the

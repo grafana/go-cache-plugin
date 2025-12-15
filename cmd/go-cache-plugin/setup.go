@@ -11,6 +11,7 @@ import (
 	"errors"
 	"expvar"
 	"fmt"
+	"github.com/grafana/go-cache-plugin/lib/otel"
 	"log"
 	"net/http"
 	"os"
@@ -306,7 +307,7 @@ func initServerCert(env *command.Env, hosts []string) (tls.Certificate, error) {
 
 // makeHandler returns an HTTP handler that dispatches requests to debug
 // handlers or to the specified proxies, if they are defined.
-func makeHandler(modProxy, revProxy http.Handler) http.HandlerFunc {
+func makeHandler(modProxy, revProxy http.Handler, tracingContext *otel.TracingContext) http.HandlerFunc {
 	mux := http.NewServeMux()
 	tsweb.Debugger(mux)
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -327,6 +328,11 @@ func makeHandler(modProxy, revProxy http.Handler) http.HandlerFunc {
 			return
 		}
 		if modProxy != nil && r.Method == http.MethodGet && strings.HasPrefix(path, "/mod/") {
+			if tracingContext != nil {
+				_, span := tracingContext.SpanWithContext(r.Context(), strings.TrimPrefix(path, "/mod/"))
+				defer span.End()
+			}
+
 			log.Printf("proxying %s %s", r.Method, r.URL.Path)
 			modProxy.ServeHTTP(w, r)
 			return
