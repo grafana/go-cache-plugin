@@ -74,11 +74,6 @@ This mode bridges stdin/stdout to a cache server (see the "serve" command)
 listening on the specified port.`,
 				Run: command.Adapt(runConnect),
 			},
-			{
-				Name:     "toolexec",
-				SetFlags: command.Flags(flax.MustBind, &toolexecFlags),
-				Run:      command.Adapt(runToolexec),
-			},
 			command.HelpCommand(helpTopics),
 			command.VersionCommand(),
 		},

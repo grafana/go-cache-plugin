@@ -1,12 +1,25 @@
 package toolexec
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
 const (
 	Asm     = "asm"
 	Compile = "compile"
 	Link    = "link"
 )
+
+func GetToolexecArgs(args []string) ([]string, error) {
+	for i, v := range args {
+		if strings.HasSuffix(v, Asm) || strings.HasSuffix(v, Compile) || strings.HasSuffix(v, Link) {
+			return args[i-1:], nil
+		}
+		println("@@@@@", v)
+	}
+	return nil, fmt.Errorf("no tool found")
+}
 
 func GetTool(tool string) string {
 	parts := strings.Split(tool, "/")
