@@ -224,7 +224,7 @@ func runConnect(env *command.Env, plugin string) error {
 	conn.Close()
 
 	shutdownTracer(context.Background())
-	vprintf(fmt.Sprintf("connection closed (%v elapsed)", time.Since(start)))
+	vprintf("connection closed (%v elapsed)", time.Since(start))
 	return nil
 }
 
