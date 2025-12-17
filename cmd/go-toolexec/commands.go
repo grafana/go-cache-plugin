@@ -6,16 +6,17 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
+	"os/exec"
+
 	"github.com/creachadair/command"
 	"github.com/grafana/go-cache-plugin/lib/otel"
 	"github.com/grafana/go-cache-plugin/lib/toolexec"
 	"go.opentelemetry.io/otel/attribute"
-	"os"
-	"os/exec"
 )
 
 var toolexecFlags struct {
-	LogFile      string `flag:"log-file,default=$LOG_FILE,File used for logs"`
+	TraceFile    string `flag:"log-file,default=$TOOLEXEC_TRACING_TRACE_FILE,File used for logs"`
 	TraceId      string `flag:"traceId,default=$TRACING_TRACE_ID,Trace Id (optional)"`
 	ParentSpanId string `flag:"parentSpanId,default=$TRACING_PARENT_SPAN_ID,Parent Span Id (optional)"`
 	RunId        string `flag:"runId,default=$RUN_ID,Run ID (optional)"`
@@ -68,11 +69,11 @@ func initModTracing(ctx context.Context) (func(context.Context) error, *otel.Tra
 		tracingContext = otel.NewTracingContextFromRunData(runId, runAttempt, jobName, stepName, stepNumber)
 	}
 
-	file := toolexecFlags.LogFile
+	file := toolexecFlags.TraceFile
 	if file == "" {
 		file = "trace.json"
 	}
-	shutdown, err := otel.SetupLoggingProvider(ctx, "gobuild-toolexec", toolexecFlags.LogFile)
+	shutdown, err := otel.SetupLoggingProvider(ctx, "gobuild-toolexec", toolexecFlags.TraceFile)
 	if err != nil {
 		return nil, nil, err
 	}
