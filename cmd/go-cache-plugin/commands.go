@@ -4,12 +4,9 @@
 package main
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/grafana/go-cache-plugin/lib/otel"
 	"io"
 	"log"
 	"net"
@@ -21,6 +18,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/grafana/go-cache-plugin/lib/otel"
+
 	"github.com/creachadair/command"
 	"github.com/creachadair/gocache"
 	"github.com/creachadair/taskgroup"
@@ -28,7 +27,6 @@ import (
 
 var flags struct {
 	CacheDir             string        `flag:"cache-dir,default=$GOCACHE_DIR,Local cache directory (required)"`
-	LogFile              string        `flag:"log-file,default=trace.log,File used for logs"`
 	S3Bucket             string        `flag:"bucket,default=$GOCACHE_S3_BUCKET,S3 bucket name (required if no --local flag provided)"`
 	S3Region             string        `flag:"region,default=$GOCACHE_S3_REGION,S3 region"`
 	S3Endpoint           string        `flag:"s3-endpoint-url,default=$GOCACHE_S3_ENDPOINT_URL,S3 custom endpoint URL (if unset, use AWS default)"`
@@ -44,6 +42,7 @@ var flags struct {
 	DebugLog             int           `flag:"debug,default=$GOCACHE_DEBUG,Enable detailed per-request debug logging (noisy)"`
 	TracingEnabled       bool          `flag:"tracing,default=$ENABLE_TRACING,Enable tracing (optional)"`
 	OtelCollectorAddress string        `flag:"otel-collector,default=$OTEL_COLLECTOR_ADDRESS,OTEL collector address (optional)"`
+	LogFile              string        `flag:"log-file,default=trace.log,File used for logs"`
 	TraceId              string        `flag:"traceId,default=$TRACING_TRACE_ID,Trace Id (optional)"`
 	ParentSpanId         string        `flag:"parentSpanId,default=$TRACING_PARENT_SPAN_ID,Parent Span Id (optional)"`
 	RunId                string        `flag:"runId,default=$RUN_ID,Run ID (optional)"`
@@ -79,7 +78,7 @@ var serveFlags struct {
 	Plugin     string `flag:"plugin,default=$GOCACHE_PLUGIN,Plugin service addr (or port) (required)"`
 	HTTP       string `flag:"http,default=$GOCACHE_HTTP,HTTP service address ([host]:port)"`
 	ModProxy   bool   `flag:"modproxy,default=$GOCACHE_MODPROXY,Enable a Go module proxy (requires --http)"`
-	ModNoCache bool   `flag:"mod-nocache,default=$GOCACHE_MODPROXY_NOCACHE,Disable the local module cache (requires --modproxy)"`
+	ModNoCache bool   `flag:"mod-nocache,default=$GOCACHE_MODPROXY_NOCACHE,Disable the module cache (requires --modproxy)"`
 	RevProxy   string `flag:"revproxy,default=$GOCACHE_REVPROXY,Reverse proxy these hosts (comma-separated; requires --http)"`
 	SumDB      string `flag:"sumdb,default=$GOCACHE_SUMDB,SumDB servers to proxy for (comma-separated)"`
 }
@@ -145,9 +144,6 @@ func runServe(env *command.Env) error {
 		if err != nil {
 			return fmt.Errorf("tracing: %w", err)
 		}
-		if err != nil {
-			return fmt.Errorf("tracing: %w", err)
-		}
 
 		srv := &http.Server{
 			Addr:    serveFlags.HTTP,
@@ -157,9 +153,9 @@ func runServe(env *command.Env) error {
 		vprintf("HTTP server listening at %q", serveFlags.HTTP)
 		g.Run(func() {
 			<-ctx.Done()
-			_ = otelCleanup(ctx)
+			otelCleanup(ctx)
 			vprintf("stopping HTTP service")
-			_ = srv.Shutdown(context.Background())
+			srv.Shutdown(context.Background())
 		})
 	}
 
@@ -237,42 +233,44 @@ func initTracing(ctx context.Context, service string) (func(context.Context) err
 		return func(context.Context) error { return nil }, func([]byte) {}, nil
 	}
 
-	var shutdown func(context.Context) error
-	var err error
-	if flags.OtelCollectorAddress != "" {
-		shutdown, err = otel.SetupOtelTraceProvider(ctx, service, flags.OtelCollectorAddress)
-	} else if flags.LogFile != "" {
-		log.Printf("Otel Collector address not specified, starting with the logging reporter, log file: %s", flags.LogFile)
-		shutdown, err = otel.SetupLoggingProvider(ctx, service, flags.LogFile)
-	} else {
-		log.Printf("please specify either --otel-collector or --log-file to setup tracing or disable tracing")
-		return nil, nil, errors.New("otel exporter not initialized")
-	}
-	if err != nil {
-		return nil, nil, err
-	}
-
 	tracingContext, err := initTracingContext()
 	if err != nil {
 		return nil, nil, err
 	}
-	spanner := otel.NewAwesomeSpanner(tracingContext)
+
+	shutdown, err := initTracingProvider(ctx, service)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	spanner := otel.NewGoCacheSpanner(tracingContext)
 
 	spanReporter := func(buffer []byte) {
-		id, err := parseId(buffer[:])
-		if err != nil {
-			return
-		}
-		spanner.ProcessId(ctx, id)
+		_ = spanner.ProcessCacheRequest(ctx, buffer)
 	}
 
 	return shutdown, spanReporter, err
 }
+
 func initModTracing(ctx context.Context, service string) (func(context.Context) error, *otel.TracingContext, error) {
 	if !flags.TracingEnabled {
 		return func(context.Context) error { return nil }, nil, nil
 	}
 
+	tracingContext, err := initTracingContext()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	shutdown, err := initTracingProvider(ctx, service)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return shutdown, tracingContext, err
+}
+
+func initTracingProvider(ctx context.Context, service string) (func(context.Context) error, error) {
 	var shutdown func(context.Context) error
 	var err error
 	if flags.OtelCollectorAddress != "" {
@@ -282,15 +280,9 @@ func initModTracing(ctx context.Context, service string) (func(context.Context) 
 		shutdown, err = otel.SetupLoggingProvider(ctx, service, flags.LogFile)
 	} else {
 		log.Printf("please specify either --otel-collector or --log-file to setup tracing or disable tracing")
-		return nil, nil, errors.New("otel exporter not initialized")
+		return nil, errors.New("otel exporter not initialized")
 	}
-
-	tracingContext, err := initTracingContext()
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return shutdown, tracingContext, err
+	return shutdown, err
 }
 
 func initTracingContext() (*otel.TracingContext, error) {
@@ -325,63 +317,4 @@ func copy(w io.Writer, r io.Reader, reportTrace func([]byte)) error {
 			return fmt.Errorf("copy from: %w", err)
 		}
 	}
-}
-
-type name struct {
-}
-
-func parseId(buf []byte) (otel.CacheRequest, error) {
-	var data map[string]any
-
-	err := json.Unmarshal(buf, &data)
-	if err != nil {
-		slice, _, found := bytes.Cut(buf, []byte{'\n'})
-		if found {
-			err2 := json.Unmarshal(slice, &data)
-			if err2 != nil {
-				return otel.CacheRequest{}, err
-			}
-		}
-	}
-
-	var id string
-	var miss bool
-	var command string
-	var actionId string
-
-	id1, ok := data["ID"]
-	if !ok {
-		return otel.CacheRequest{}, errors.New("id not found in the request")
-	} else {
-		id = fmt.Sprint(id1)
-	}
-
-	command1, ok := data["Command"]
-	if !ok {
-		command = ""
-	} else {
-		command = fmt.Sprint(command1)
-	}
-
-	_, ok = data["Miss"]
-	if !ok {
-		miss = false
-	} else {
-		miss = true
-	}
-
-	actionId1, ok := data["ActionID"]
-	if !ok {
-		actionId = ""
-	} else {
-		actionId = fmt.Sprint(actionId1)
-	}
-
-	data2 := otel.CacheRequest{
-		Id:       id,
-		ActionId: actionId,
-		Miss:     miss,
-		Command:  command,
-	}
-	return data2, nil
 }

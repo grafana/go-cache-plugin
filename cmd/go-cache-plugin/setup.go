@@ -11,14 +11,14 @@ import (
 	"errors"
 	"expvar"
 	"fmt"
-	"github.com/grafana/go-cache-plugin/lib/otel"
-	"log"
 	"net/http"
 	"os"
 	"path"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/grafana/go-cache-plugin/lib/otel"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -140,7 +140,7 @@ func initModProxy(env *command.Env, s3c *s3util.Client) (_ http.Handler, cleanup
 		return nil, nil, env.Usagef("you must set --http to enable --modproxy")
 	}
 
-	if s3c == nil && !flags.LocalCache {
+	if s3c == nil && !serveFlags.ModNoCache {
 		return nil, nil, errors.New("s3 client not configured")
 	}
 
@@ -333,7 +333,6 @@ func makeHandler(modProxy, revProxy http.Handler, tracingContext *otel.TracingCo
 				defer span.End()
 			}
 
-			log.Printf("proxying %s %s", r.Method, r.URL.Path)
 			modProxy.ServeHTTP(w, r)
 			return
 		}
