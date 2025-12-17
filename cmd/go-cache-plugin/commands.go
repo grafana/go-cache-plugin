@@ -31,7 +31,7 @@ var flags struct {
 	S3Region             string        `flag:"region,default=$GOCACHE_S3_REGION,S3 region"`
 	S3Endpoint           string        `flag:"s3-endpoint-url,default=$GOCACHE_S3_ENDPOINT_URL,S3 custom endpoint URL (if unset, use AWS default)"`
 	S3PathStyle          bool          `flag:"s3-path-style,default=$GOCACHE_S3_PATH_STYLE,S3 path-style URLs (optional)"`
-	LocalCache           bool          `flag:"local-cache,default=$GOCACHE_LOCAL,Runs in no cache mode (no S3)"`
+	LocalOnlyCache       bool          `flag:"local-only,default=$GOCACHE_LOCAL_ONLY,Runs in no cache mode (no S3)"`
 	KeyPrefix            string        `flag:"prefix,default=$GOCACHE_KEY_PREFIX,S3 key prefix (optional)"`
 	MinUploadSize        int64         `flag:"min-upload-size,default=$GOCACHE_MIN_SIZE,Minimum object size to upload to S3 (in bytes)"`
 	Concurrency          int           `flag:"c,default=$GOCACHE_CONCURRENCY,Maximum number of concurrent requests"`
@@ -40,11 +40,11 @@ var flags struct {
 	Expiration           time.Duration `flag:"expiry,default=$GOCACHE_EXPIRY,Cache expiration period (optional)"`
 	Verbose              bool          `flag:"v,default=$GOCACHE_VERBOSE,Enable verbose logging"`
 	DebugLog             int           `flag:"debug,default=$GOCACHE_DEBUG,Enable detailed per-request debug logging (noisy)"`
-	TracingEnabled       bool          `flag:"tracing,default=$ENABLE_TRACING,Enable tracing (optional)"`
-	OtelCollectorAddress string        `flag:"otel-collector,default=$OTEL_COLLECTOR_ADDRESS,OTEL collector address (optional)"`
-	LogFile              string        `flag:"log-file,default=trace.log,File used for logs"`
-	TraceId              string        `flag:"traceId,default=$TRACING_TRACE_ID,Trace Id (optional)"`
-	ParentSpanId         string        `flag:"parentSpanId,default=$TRACING_PARENT_SPAN_ID,Parent Span Id (optional)"`
+	TracingEnabled       bool          `flag:"tracing,default=$GOCACHE_ENABLE_TRACING,Enable tracing (optional)"`
+	OtelCollectorAddress string        `flag:"otel-collector,default=$GOCACHE_TRACING_OTEL_COLLECTOR,OTEL collector address (optional)"`
+	TracesLogFile        string        `flag:"traces-log-file,default=$GOCACHE_TRACING_TRACE_FILE,File used to write traces"`
+	TraceId              string        `flag:"traceId,default=$GOCAHE_TRACING_TRACE_ID,Trace Id (optional)"`
+	ParentSpanId         string        `flag:"parentSpanId,default=$GOCACHE_TRACING_PARENT_SPAN_ID,Parent Span Id (optional)"`
 	RunId                string        `flag:"runId,default=$RUN_ID,Run ID (optional)"`
 	RunAttempt           string        `flag:"runAttempt,default=$RUN_ATTEMPT,Run attempt (optional)"`
 	JobName              string        `flag:"jobName,default=$JOB_NAME,Job name (optional)"`
@@ -78,7 +78,7 @@ var serveFlags struct {
 	Plugin     string `flag:"plugin,default=$GOCACHE_PLUGIN,Plugin service addr (or port) (required)"`
 	HTTP       string `flag:"http,default=$GOCACHE_HTTP,HTTP service address ([host]:port)"`
 	ModProxy   bool   `flag:"modproxy,default=$GOCACHE_MODPROXY,Enable a Go module proxy (requires --http)"`
-	ModNoCache bool   `flag:"mod-nocache,default=$GOCACHE_MODPROXY_NOCACHE,Disable the module cache (requires --modproxy)"`
+	ModNoCache bool   `flag:"modproxy-nocache,default=$GOCACHE_MODPROXY_NOCACHE,Disable the module cache (requires --modproxy)"`
 	RevProxy   string `flag:"revproxy,default=$GOCACHE_REVPROXY,Reverse proxy these hosts (comma-separated; requires --http)"`
 	SumDB      string `flag:"sumdb,default=$GOCACHE_SUMDB,SumDB servers to proxy for (comma-separated)"`
 }
@@ -275,9 +275,9 @@ func initTracingProvider(ctx context.Context, service string) (func(context.Cont
 	var err error
 	if flags.OtelCollectorAddress != "" {
 		shutdown, err = otel.SetupOtelTraceProvider(ctx, service, flags.OtelCollectorAddress)
-	} else if flags.LogFile != "" {
-		log.Printf("Otel Collector address not specified, starting with the logging reporter, log file: %s", flags.LogFile)
-		shutdown, err = otel.SetupLoggingProvider(ctx, service, flags.LogFile)
+	} else if flags.TracesLogFile != "" {
+		log.Printf("Otel Collector address not specified, starting with the logging reporter, log file: %s", flags.TracesLogFile)
+		shutdown, err = otel.SetupLoggingProvider(ctx, service, flags.TracesLogFile)
 	} else {
 		log.Printf("please specify either --otel-collector or --log-file to setup tracing or disable tracing")
 		return nil, errors.New("otel exporter not initialized")

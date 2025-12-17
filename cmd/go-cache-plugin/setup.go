@@ -41,7 +41,7 @@ func initCacheServer(env *command.Env) (*gocache.Server, *s3util.Client, error) 
 	switch {
 	case flags.CacheDir == "":
 		return nil, nil, env.Usagef("you must provide a --cache-dir")
-	case flags.LocalCache:
+	case flags.LocalOnlyCache:
 		dirCache, err := cachedir.New(flags.CacheDir)
 		if err != nil {
 			return nil, nil, fmt.Errorf("create local cache: %w", err)
@@ -67,7 +67,7 @@ func initCacheServer(env *command.Env) (*gocache.Server, *s3util.Client, error) 
 		}
 		return s, nil, nil
 
-	case flags.S3Bucket == "" && !flags.LocalCache:
+	case flags.S3Bucket == "" && !flags.LocalOnlyCache:
 		return nil, nil, env.Usagef("you must provide an S3 --bucket name or run with --no-cache")
 	}
 	region, err := getBucketRegion(env.Context(), flags.S3Bucket)

@@ -2,6 +2,8 @@ package otel
 
 import (
 	"context"
+	"os"
+
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
@@ -9,8 +11,6 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
-	"log"
-	"os"
 )
 
 var tp *trace.TracerProvider
@@ -18,10 +18,12 @@ var tp *trace.TracerProvider
 func SetupLoggingProvider(ctx context.Context, service, file string) (func(context.Context) error, error) {
 	f, err := os.OpenFile(file, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
-		log.Fatalf("error opening file: %v", err)
+		return nil, err
 	}
 	exporter, err := stdouttrace.New(stdouttrace.WithWriter(f))
-
+	if err != nil {
+		return nil, err
+	}
 	shutdownHook := setupTraceProvider(service, exporter)
 	return shutdownHook, nil
 }
@@ -42,7 +44,6 @@ func SetupOtelTraceProvider(ctx context.Context, service, address string) (func(
 }
 
 func setupTraceProvider(service string, exporter trace.SpanExporter) func(ctx context.Context) error {
-
 	res := resource.NewWithAttributes(
 		semconv.SchemaURL,
 		semconv.ServiceName(service),
