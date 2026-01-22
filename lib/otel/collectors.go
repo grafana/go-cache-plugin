@@ -2,6 +2,7 @@ package otel
 
 import (
 	"context"
+	"fmt"
 	"os"
 
 	"go.opentelemetry.io/otel"
@@ -31,7 +32,8 @@ func SetupLoggingProvider(ctx context.Context, service, file string) (func(conte
 func SetupOtelTraceProvider(ctx context.Context, service, address string) (func(context.Context) error, error) {
 	exporter, err := otlptracegrpc.New(ctx,
 		otlptracegrpc.WithEndpoint(address),
-		otlptracegrpc.WithInsecure(),
+		//otlptracegrpc.WithInsecure(),
+		otlptracegrpc.WithHeaders(map[string]string{"Authorization": fmt.Sprintf("Basic %s", os.Getenv("OTEL_EXPORTER_OTLP_HEADERS_API_KEY"))}),
 	)
 
 	if err != nil {
