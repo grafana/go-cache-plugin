@@ -29,10 +29,12 @@ func SetupLoggingProvider(ctx context.Context, service, file string) (func(conte
 	return shutdownHook, nil
 }
 
-func SetupOtelTraceProvider(ctx context.Context, service, address string) (func(context.Context) error, error) {
+func SetupOtelTraceProvider(ctx context.Context, service string) (func(context.Context) error, error) {
+	if os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT") == "" && os.Getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT") == "" {
+		return nil, fmt.Errorf("OTEL_EXPORTER_OTLP_ENDPOINT or OTEL_EXPORTER_OTLP_TRACES_ENDPOINT env variable is not set")
+	}
+
 	exporter, err := otlptracegrpc.New(ctx,
-		otlptracegrpc.WithEndpoint(address),
-		//otlptracegrpc.WithInsecure(),
 		otlptracegrpc.WithHeaders(map[string]string{"Authorization": fmt.Sprintf("Basic %s", os.Getenv("OTEL_EXPORTER_OTLP_HEADERS_API_KEY"))}),
 	)
 
