@@ -273,14 +273,12 @@ func initModTracing(ctx context.Context, service string) (func(context.Context) 
 func initTracingProvider(ctx context.Context, service string) (func(context.Context) error, error) {
 	var shutdown func(context.Context) error
 	var err error
-	if flags.OtelCollectorAddress != "" {
-		shutdown, err = otel.SetupOtelTraceProvider(ctx, service, flags.OtelCollectorAddress)
-	} else if flags.TracesLogFile != "" {
-		log.Printf("Otel Collector address not specified, starting with the logging reporter, log file: %s", flags.TracesLogFile)
+
+	if flags.TracesLogFile != "" {
+		log.Printf("Starting with the logging reporter, log file: %s", flags.TracesLogFile)
 		shutdown, err = otel.SetupLoggingProvider(ctx, service, flags.TracesLogFile)
 	} else {
-		log.Printf("please specify either --otel-collector or --log-file to setup tracing or disable tracing")
-		return nil, errors.New("otel exporter not initialized")
+		shutdown, err = otel.SetupOtelTraceProvider(ctx, service)
 	}
 	return shutdown, err
 }
