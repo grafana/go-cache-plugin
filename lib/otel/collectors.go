@@ -2,11 +2,13 @@ package otel
 
 import (
 	"context"
+	"fmt"
 	"os"
+	"strings"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
 	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/sdk/trace"
@@ -28,10 +30,17 @@ func SetupLoggingProvider(ctx context.Context, service, file string) (func(conte
 	return shutdownHook, nil
 }
 
-func SetupOtelTraceProvider(ctx context.Context, service, address string) (func(context.Context) error, error) {
-	exporter, err := otlptracegrpc.New(ctx,
-		otlptracegrpc.WithEndpoint(address),
-		otlptracegrpc.WithInsecure(),
+func SetupOtelTraceProvider(ctx context.Context, service string) (func(context.Context) error, error) {
+	if os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT") == "" && os.Getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT") == "" {
+		return nil, fmt.Errorf("OTEL_EXPORTER_OTLP_ENDPOINT or OTEL_EXPORTER_OTLP_TRACES_ENDPOINT env variable is not set")
+	}
+
+	auth := os.Getenv("OTEL_EXPORTER_OTLP_HEADERS")
+	sep := strings.Index(auth, "=")
+	name, value := auth[:sep], auth[sep+1:]
+
+	exporter, err := otlptracehttp.New(ctx,
+		otlptracehttp.WithHeaders(map[string]string{name: value}),
 	)
 
 	if err != nil {
