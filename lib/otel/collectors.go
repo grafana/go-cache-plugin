@@ -17,7 +17,7 @@ import (
 
 var tp *trace.TracerProvider
 
-func SetupLoggingProvider(ctx context.Context, service, file string) (func(context.Context) error, error) {
+func SetupLoggingProvider(ctx context.Context, file string) (func(context.Context) error, error) {
 	f, err := os.OpenFile(file, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
 		return nil, err
@@ -26,11 +26,11 @@ func SetupLoggingProvider(ctx context.Context, service, file string) (func(conte
 	if err != nil {
 		return nil, err
 	}
-	shutdownHook := setupTraceProvider(service, exporter)
+	shutdownHook := setupTraceProvider(exporter)
 	return shutdownHook, nil
 }
 
-func SetupOtelTraceProvider(ctx context.Context, service string) (func(context.Context) error, error) {
+func SetupOtelTraceProvider(ctx context.Context) (func(context.Context) error, error) {
 	if os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT") == "" && os.Getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT") == "" {
 		return nil, fmt.Errorf("OTEL_EXPORTER_OTLP_ENDPOINT or OTEL_EXPORTER_OTLP_TRACES_ENDPOINT env variable is not set")
 	}
@@ -48,15 +48,14 @@ func SetupOtelTraceProvider(ctx context.Context, service string) (func(context.C
 		return nil, err
 	}
 
-	shutdownHook := setupTraceProvider(service, exporter)
+	shutdownHook := setupTraceProvider(exporter)
 
 	return shutdownHook, nil
 }
 
-func setupTraceProvider(service string, exporter trace.SpanExporter) func(ctx context.Context) error {
+func setupTraceProvider(exporter trace.SpanExporter) func(ctx context.Context) error {
 	res := resource.NewWithAttributes(
 		semconv.SchemaURL,
-		semconv.ServiceName(service),
 		attribute.String("env", "ci"),
 	)
 

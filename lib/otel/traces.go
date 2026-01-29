@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -15,25 +16,9 @@ type TracingContext struct {
 	ParentSpanID trace.SpanID
 }
 
-func NewTracingContext(traceId, parentSpanId string) (*TracingContext, error) {
-	traceIDFromHex, err := trace.TraceIDFromHex(traceId)
-	if err != nil {
-		return nil, err
-	}
-	spanIDFromHex, err := trace.SpanIDFromHex(parentSpanId)
-	if err != nil {
-		return nil, err
-	}
-
-	return &TracingContext{
-		TraceID:      traceIDFromHex,
-		ParentSpanID: spanIDFromHex,
-	}, nil
-}
-
-func NewTracingContextFromRunData(runId, runAttempt, jobName, stepName, stepNumber string) *TracingContext {
-	traceId, _ := trace.TraceIDFromHex(GenerateTraceID(runId, runAttempt))
-	spanId, _ := trace.SpanIDFromHex(GenerateStepSpanID_Number(runId, runAttempt, jobName, stepNumber))
+func NewTracingContextFromRunData(repo, runId, runAttempt, jobName, stepName string) *TracingContext {
+	traceId, _ := trace.TraceIDFromHex(GenerateTraceID(repo, runId, runAttempt))
+	spanId, _ := trace.SpanIDFromHex(GenerateStepSpanID_Number(repo, runId, runAttempt, jobName, stepName))
 
 	return &TracingContext{
 		TraceID:      traceId,
@@ -61,32 +46,32 @@ func (t *TracingContext) SpanWithContext(context context.Context, name string, a
 	return start, span
 }
 
-func GenerateTraceID(runID, runAttempt string) string {
-	input := fmt.Sprintf("%s%st", runID, runAttempt)
+func GenerateTraceID(repo, runID, runAttempt string) string {
+	input := fmt.Sprintf("%s%s%st", repo, runID, runAttempt)
 	hash := sha256.Sum256([]byte(input))
 	return hex.EncodeToString(hash[:])[:32]
 }
 
-func GenerateParentSpanID(runID, runAttempt string) string {
-	input := fmt.Sprintf("%s%ss", runID, runAttempt)
+func GenerateParentSpanID(repo, runID, runAttempt string) string {
+	input := fmt.Sprintf("%s%s%ss", repo, runID, runAttempt)
 	hash := sha256.Sum256([]byte(input))
 	return hex.EncodeToString(hash[:])[16:32]
 }
 
-func GenerateJobSpanID(runID, runAttempt, jobName string) string {
-	input := fmt.Sprintf("%s%s%s", runID, runAttempt, jobName)
+func GenerateJobSpanID(repo, runID, runAttempt, jobName string) string {
+	input := fmt.Sprintf("%s%s%s%s", repo, runID, runAttempt, jobName)
 	hash := sha256.Sum256([]byte(input))
 	return hex.EncodeToString(hash[:])[16:32]
 }
 
-func GenerateStepSpanID(runID, runAttempt, jobName, stepName string) string {
-	input := fmt.Sprintf("%s%s%s%s", runID, runAttempt, jobName, stepName)
+func GenerateStepSpanID(repo, runID, runAttempt, jobName, stepName string) string {
+	input := fmt.Sprintf("%s%s%s%s%s", repo, runID, runAttempt, jobName, stepName)
 	hash := sha256.Sum256([]byte(input))
 	return hex.EncodeToString(hash[:])[16:32]
 }
 
-func GenerateStepSpanID_Number(runID, runAttempt, jobName, stepNumber string) string {
-	input := fmt.Sprintf("%s%s%s%s", runID, runAttempt, jobName, stepNumber)
+func GenerateStepSpanID_Number(repo, runID, runAttempt, jobName, stepNumber string) string {
+	input := fmt.Sprintf("%s%s%s%s%s", repo, runID, runAttempt, jobName, stepNumber)
 	hash := sha256.Sum256([]byte(input))
 	return hex.EncodeToString(hash[:])[16:32]
 }
