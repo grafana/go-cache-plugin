@@ -18,7 +18,7 @@ type TracingContext struct {
 
 func NewTracingContextFromRunData(repo, runId, runAttempt, jobName, stepName string) *TracingContext {
 	traceId, _ := trace.TraceIDFromHex(GenerateTraceID(repo, runId, runAttempt))
-	spanId, _ := trace.SpanIDFromHex(GenerateStepSpanID_Number(repo, runId, runAttempt, jobName, stepName))
+	spanId, _ := trace.SpanIDFromHex(GenerateStepSpanID(repo, runId, runAttempt, jobName, stepName))
 	return &TracingContext{
 		TraceID:      traceId,
 		ParentSpanID: spanId,
