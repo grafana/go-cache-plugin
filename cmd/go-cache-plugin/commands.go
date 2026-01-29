@@ -42,11 +42,11 @@ var flags struct {
 	DebugLog         int           `flag:"debug,default=$GOCACHE_DEBUG,Enable detailed per-request debug logging (noisy)"`
 	TracingEnabled   bool          `flag:"tracing,default=$GOCACHE_ENABLE_TRACING,Enable tracing (optional)"`
 	TracesLogFile    string        `flag:"traces-log-file,default=$GOCACHE_TRACING_TRACE_FILE,File used to write traces"`
-	GithubRepo       string        `flag:"githubRepo,default=GITHUB_REPO,Repo name (optional)"`
-	GithubRunId      string        `flag:"githubRunId,default=GITHUB_RUN_ID,Run ID (optional)"`
-	GithubRunAttempt string        `flag:"githubRunAttempt,default=GITHUB_RUN_ATTEMPT,Run attempt (optional)"`
-	GithubJobName    string        `flag:"githubJobName,default=GITHUB_JOB_NAME,Job name (optional)"`
-	GithubStepName   string        `flag:"githubStepName,default=GITHUB_STEP_ID,Step name (optional)"`
+	GithubRepo       string        `flag:"githubRepo,default=$GITHUB_REPO,Repo name (optional)"`
+	GithubRunId      string        `flag:"githubRunId,default=$GITHUB_RUN_ID,Run ID (optional)"`
+	GithubRunAttempt string        `flag:"githubRunAttempt,default=$GITHUB_RUN_ATTEMPT,Run attempt (optional)"`
+	GithubJobName    string        `flag:"githubJobName,default=$GITHUB_JOB_NAME,Job name (optional)"`
+	GithubStepName   string        `flag:"githubStepName,default=$GITHUB_STEP_ID,Step name (optional)"`
 }
 
 const (
