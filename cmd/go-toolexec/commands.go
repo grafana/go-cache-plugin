@@ -21,7 +21,7 @@ var toolexecFlags struct {
 	GithubRunId      string `flag:"githubRunId,default=$GITHUB_RUN_ID,Run ID (optional)"`
 	GithubRunAttempt string `flag:"githubRunAttempt,default=$GITHUB_RUN_ATTEMPT,Run attempt (optional)"`
 	GithubJobName    string `flag:"githubJobName,default=$GITHUB_JOB_NAME,Job name (optional)"`
-	GithubStepName   string `flag:"githubStepName,default=$GITHUB_STEP_ID,Step name (optional)"`
+	GithubStepName   string `flag:"githubStepName,default=$GITHUB_STEP_NAME,Step name (optional)"`
 }
 
 func runToolexec(env *command.Env, args []string) error {
