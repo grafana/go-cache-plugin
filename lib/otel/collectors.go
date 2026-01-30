@@ -39,7 +39,6 @@ func SetupOtelTraceProvider(ctx context.Context) (func(context.Context) error, e
 	sep := strings.Index(auth, "=")
 	name, value := auth[:sep], auth[sep+1:]
 
-	println(name, value[:5])
 	exporter, err := otlptracehttp.New(ctx,
 		otlptracehttp.WithHeaders(map[string]string{name: value}),
 	)

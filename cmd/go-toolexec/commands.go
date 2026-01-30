@@ -5,7 +5,6 @@ package main
 
 import (
 	"context"
-	"log"
 	"os"
 	"os/exec"
 
@@ -57,7 +56,6 @@ func initTracingProvider(ctx context.Context) (func(context.Context) error, *ote
 	tracingContext = otel.NewTracingContextFromRunData(toolexecFlags.GithubRepo, toolexecFlags.GithubRunId, toolexecFlags.GithubRunAttempt, toolexecFlags.GithubJobName, toolexecFlags.GithubStepName)
 
 	if toolexecFlags.TracesFile != "" {
-		log.Printf("Starting with the logging reporter, log file: %s", toolexecFlags.TracesFile)
 		shutdown, err = otel.SetupLoggingProvider(ctx, toolexecFlags.TracesFile)
 	} else {
 		shutdown, err = otel.SetupOtelTraceProvider(ctx)
