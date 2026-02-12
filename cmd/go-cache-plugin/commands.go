@@ -191,7 +191,7 @@ func runConnect(env *command.Env, plugin string) error {
 	ctx := env.Context()
 	shutdownTracer, reportSpan, err := initGocacheTracing(ctx)
 	if err != nil {
-		vprintf("Failed to init tracing provider, err %w. Starting without tracing.", err)
+		vprintf("Failed to init tracing provider, err %v. Starting without tracing.", err)
 	}
 	defer shutdownTracer(ctx)
 
