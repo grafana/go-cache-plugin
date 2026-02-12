@@ -13,15 +13,15 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-// GoCacheSpanner The sole purpose of GoCacheSpanner is to intercept GOCACHEPROG commands and report traces
-type GoCacheSpanner struct {
+// GoCacheTracer The sole purpose of GoCacheTracer is to intercept GOCACHEPROG commands and report traces
+type GoCacheTracer struct {
 	tracingContext *TracingContext
 	mutex          sync.Mutex
 	data           map[string]trace.Span
 }
 
-func NewGoCacheSpanner(context *TracingContext) *GoCacheSpanner {
-	return &GoCacheSpanner{tracingContext: context, data: make(map[string]trace.Span)}
+func NewGoCacheTracer(context *TracingContext) *GoCacheTracer {
+	return &GoCacheTracer{tracingContext: context, data: make(map[string]trace.Span)}
 }
 
 type CacheRequest struct {
@@ -31,7 +31,7 @@ type CacheRequest struct {
 	Command  string `json:"Command"`
 }
 
-func (m *GoCacheSpanner) ProcessCacheRequest(ctx context.Context, data []byte) error {
+func (m *GoCacheTracer) ProcessCacheRequest(ctx context.Context, data []byte) error {
 	request, err := parseCacheRequest(data)
 	if err != nil {
 		return err
@@ -41,7 +41,7 @@ func (m *GoCacheSpanner) ProcessCacheRequest(ctx context.Context, data []byte) e
 	return nil
 }
 
-func (m *GoCacheSpanner) ProcessId(ctx context.Context, request CacheRequest) {
+func (m *GoCacheTracer) ProcessId(ctx context.Context, request CacheRequest) {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 

@@ -15,7 +15,7 @@ import (
 )
 
 var toolexecFlags struct {
-	TracesFile       string `flag:"tracesFile,default=$GO_TOOLEXEC_OTEL_EXPORTER_FILE,File used for logs"`
+	TracesLogFile    string `flag:"traces-log-file,default=$GOCACHE_TRACES_LOG_FILE,File used to write traces"`
 	GithubRepo       string `flag:"githubRepo,default=$GITHUB_REPO,Repo name (optional)"`
 	GithubRunId      string `flag:"githubRunId,default=$GITHUB_RUN_ID,Run ID (optional)"`
 	GithubRunAttempt string `flag:"githubRunAttempt,default=$GITHUB_RUN_ATTEMPT,Run attempt (optional)"`
@@ -55,8 +55,8 @@ func initTracingProvider(ctx context.Context) (func(context.Context) error, *ote
 
 	tracingContext = otel.NewTracingContextFromRunData(toolexecFlags.GithubRepo, toolexecFlags.GithubRunId, toolexecFlags.GithubRunAttempt, toolexecFlags.GithubJobName, toolexecFlags.GithubStepName)
 
-	if toolexecFlags.TracesFile != "" {
-		shutdown, err = otel.SetupLoggingProvider(ctx, toolexecFlags.TracesFile)
+	if toolexecFlags.TracesLogFile != "" {
+		shutdown, err = otel.SetupLoggingProvider(ctx, toolexecFlags.TracesLogFile)
 	} else {
 		shutdown, err = otel.SetupOtelTraceProvider(ctx)
 	}

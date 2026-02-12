@@ -26,27 +26,28 @@ import (
 )
 
 var flags struct {
-	CacheDir         string        `flag:"cache-dir,default=$GOCACHE_DIR,Local cache directory (required)"`
-	S3Bucket         string        `flag:"bucket,default=$GOCACHE_S3_BUCKET,S3 bucket name (required if no --local flag provided)"`
-	S3Region         string        `flag:"region,default=$GOCACHE_S3_REGION,S3 region"`
-	S3Endpoint       string        `flag:"s3-endpoint-url,default=$GOCACHE_S3_ENDPOINT_URL,S3 custom endpoint URL (if unset, use AWS default)"`
-	S3PathStyle      bool          `flag:"s3-path-style,default=$GOCACHE_S3_PATH_STYLE,S3 path-style URLs (optional)"`
-	LocalOnlyCache   bool          `flag:"local-only,default=$GOCACHE_LOCAL_ONLY,Runs in no cache mode (no S3)"`
-	KeyPrefix        string        `flag:"prefix,default=$GOCACHE_KEY_PREFIX,S3 key prefix (optional)"`
-	MinUploadSize    int64         `flag:"min-upload-size,default=$GOCACHE_MIN_SIZE,Minimum object size to upload to S3 (in bytes)"`
-	Concurrency      int           `flag:"c,default=$GOCACHE_CONCURRENCY,Maximum number of concurrent requests"`
-	S3Concurrency    int           `flag:"u,default=$GOCACHE_S3_CONCURRENCY,Maximum concurrency for upload to S3"`
-	PrintMetrics     bool          `flag:"metrics,default=$GOCACHE_METRICS,Print summary metrics to stderr at exit"`
-	Expiration       time.Duration `flag:"expiry,default=$GOCACHE_EXPIRY,Cache expiration period (optional)"`
-	Verbose          bool          `flag:"v,default=$GOCACHE_VERBOSE,Enable verbose logging"`
-	DebugLog         int           `flag:"debug,default=$GOCACHE_DEBUG,Enable detailed per-request debug logging (noisy)"`
-	TracingEnabled   bool          `flag:"tracing,default=$GOCACHE_ENABLE_TRACING,Enable tracing (optional)"`
-	TracesLogFile    string        `flag:"traces-log-file,default=$GOCACHE_TRACING_TRACE_FILE,File used to write traces"`
-	GithubRepo       string        `flag:"githubRepo,default=$GITHUB_REPO,Repo name (optional)"`
-	GithubRunId      string        `flag:"githubRunId,default=$GITHUB_RUN_ID,Run ID (optional)"`
-	GithubRunAttempt string        `flag:"githubRunAttempt,default=$GITHUB_RUN_ATTEMPT,Run attempt (optional)"`
-	GithubJobName    string        `flag:"githubJobName,default=$GITHUB_JOB_NAME,Job name (optional)"`
-	GithubStepName   string        `flag:"githubStepName,default=$GITHUB_STEP_NAME,Step name (optional)"`
+	CacheDir      string        `flag:"cache-dir,default=$GOCACHE_DIR,Local cache directory (required)"`
+	S3Bucket      string        `flag:"bucket,default=$GOCACHE_S3_BUCKET,S3 bucket name (required if no --local flag provided)"`
+	S3Region      string        `flag:"region,default=$GOCACHE_S3_REGION,S3 region"`
+	S3Endpoint    string        `flag:"s3-endpoint-url,default=$GOCACHE_S3_ENDPOINT_URL,S3 custom endpoint URL (if unset, use AWS default)"`
+	S3PathStyle   bool          `flag:"s3-path-style,default=$GOCACHE_S3_PATH_STYLE,S3 path-style URLs (optional)"`
+	KeyPrefix     string        `flag:"prefix,default=$GOCACHE_KEY_PREFIX,S3 key prefix (optional)"`
+	MinUploadSize int64         `flag:"min-upload-size,default=$GOCACHE_MIN_SIZE,Minimum object size to upload to S3 (in bytes)"`
+	Concurrency   int           `flag:"c,default=$GOCACHE_CONCURRENCY,Maximum number of concurrent requests"`
+	S3Concurrency int           `flag:"u,default=$GOCACHE_S3_CONCURRENCY,Maximum concurrency for upload to S3"`
+	PrintMetrics  bool          `flag:"metrics,default=$GOCACHE_METRICS,Print summary metrics to stderr at exit"`
+	Expiration    time.Duration `flag:"expiry,default=$GOCACHE_EXPIRY,Cache expiration period (optional)"`
+	Verbose       bool          `flag:"v,default=$GOCACHE_VERBOSE,Enable verbose logging"`
+	DebugLog      int           `flag:"debug,default=$GOCACHE_DEBUG,Enable detailed per-request debug logging (noisy)"`
+	// Disable S3 caching for local development and testing
+	LocalOnlyCache bool `flag:"local-only,default=$GOCACHE_LOCAL_ONLY,Runs in no cache mode (no S3)"`
+	// Tracing related flags required to determenistically compute parent Span and Trace IDs
+	TracesLogFile    string `flag:"traces-log-file,default=$GOCACHE_TRACES_LOG_FILE,File used to write traces"`
+	GithubRepo       string `flag:"githubRepo,default=$GITHUB_REPO,Repo name (optional)"`
+	GithubRunId      string `flag:"githubRunId,default=$GITHUB_RUN_ID,Run ID (optional)"`
+	GithubRunAttempt string `flag:"githubRunAttempt,default=$GITHUB_RUN_ATTEMPT,Run attempt (optional)"`
+	GithubJobName    string `flag:"githubJobName,default=$GITHUB_JOB_NAME,Job name (optional)"`
+	GithubStepName   string `flag:"githubStepName,default=$GITHUB_STEP_NAME,Step name (optional)"`
 }
 
 const (
@@ -72,12 +73,11 @@ func runDirect(env *command.Env) error {
 }
 
 var serveFlags struct {
-	Plugin     string `flag:"plugin,default=$GOCACHE_PLUGIN,Plugin service addr (or port) (required)"`
-	HTTP       string `flag:"http,default=$GOCACHE_HTTP,HTTP service address ([host]:port)"`
-	ModProxy   bool   `flag:"modproxy,default=$GOCACHE_MODPROXY,Enable a Go module proxy (requires --http)"`
-	ModNoCache bool   `flag:"modproxy-nocache,default=$GOCACHE_MODPROXY_NOCACHE,Disable the module cache (requires --modproxy)"`
-	RevProxy   string `flag:"revproxy,default=$GOCACHE_REVPROXY,Reverse proxy these hosts (comma-separated; requires --http)"`
-	SumDB      string `flag:"sumdb,default=$GOCACHE_SUMDB,SumDB servers to proxy for (comma-separated)"`
+	Plugin   string `flag:"plugin,default=$GOCACHE_PLUGIN,Plugin service addr (or port) (required)"`
+	HTTP     string `flag:"http,default=$GOCACHE_HTTP,HTTP service address ([host]:port)"`
+	ModProxy bool   `flag:"modproxy,default=$GOCACHE_MODPROXY,Enable a Go module proxy (requires --http)"`
+	RevProxy string `flag:"revproxy,default=$GOCACHE_REVPROXY,Reverse proxy these hosts (comma-separated; requires --http)"`
+	SumDB    string `flag:"sumdb,default=$GOCACHE_SUMDB,SumDB servers to proxy for (comma-separated)"`
 }
 
 func noopClose(context.Context) error { return nil }
@@ -137,9 +137,10 @@ func runServe(env *command.Env) error {
 	// If an HTTP server is enabled, start it up with debug routes
 	// and whatever other services were requested.
 	if serveFlags.HTTP != "" {
-		otelCleanup, tracingContext, err := initModTracing(ctx)
+		shutdownHook, tracingContext, err := initTracing(ctx)
 		if err != nil {
-			return fmt.Errorf("tracing: %w", err)
+			vprintf("Failed to initialize tracing: %v", err)
+			vprintf("Starting without otel exporter.")
 		}
 
 		srv := &http.Server{
@@ -150,7 +151,7 @@ func runServe(env *command.Env) error {
 		vprintf("HTTP server listening at %q", serveFlags.HTTP)
 		g.Run(func() {
 			<-ctx.Done()
-			otelCleanup(ctx)
+			shutdownHook(ctx)
 			vprintf("stopping HTTP service")
 			srv.Shutdown(context.Background())
 		})
@@ -188,10 +189,12 @@ func runServe(env *command.Env) error {
 func runConnect(env *command.Env, plugin string) error {
 
 	ctx := env.Context()
-	shutdownTracer, reportSpan, err := initTracing(ctx, "gobuild-gocacheprog-connect")
+	shutdownTracer, reportSpan, err := initGocacheTracing(ctx)
 	if err != nil {
-		return err
+		vprintf("Failed to init tracing provider, err %w. Starting without tracing.", err)
 	}
+	defer shutdownTracer(ctx)
+
 	addr := plugin
 	// If the caller has not specified a host/port, then likely this is an older usage which only specifies port
 	if !strings.Contains(plugin, ":") {
@@ -220,66 +223,58 @@ func runConnect(env *command.Env, plugin string) error {
 	out.Wait()
 	conn.Close()
 
-	shutdownTracer(context.Background())
 	vprintf("connection closed (%v elapsed)", time.Since(start))
 	return nil
 }
 
-func initTracing(ctx context.Context, service string) (func(context.Context) error, func([]byte), error) {
-	if !flags.TracingEnabled {
-		return func(context.Context) error { return nil }, func([]byte) {}, nil
+func initTracing(ctx context.Context) (func(context.Context) error, *otel.TracingContext, error) {
+	noopShutdownHook := func(context.Context) error {
+		return nil
+	}
+
+	shutdownHook, err := initTracingProvider(ctx)
+	if err != nil {
+		return noopShutdownHook, nil, err
 	}
 
 	tracingContext, err := initTracingContext()
 	if err != nil {
-		return nil, nil, err
+		go shutdownHook(ctx)
+		return noopShutdownHook, nil, err
 	}
 
-	shutdown, err := initTracingProvider(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	spanner := otel.NewGoCacheSpanner(tracingContext)
-
-	spanReporter := func(buffer []byte) {
-		_ = spanner.ProcessCacheRequest(ctx, buffer)
-	}
-
-	return shutdown, spanReporter, err
+	return shutdownHook, tracingContext, err
 }
 
-func initModTracing(ctx context.Context) (func(context.Context) error, *otel.TracingContext, error) {
-	if !flags.TracingEnabled {
-		return func(context.Context) error { return nil }, nil, nil
-	}
-
-	tracingContext, err := initTracingContext()
+func initGocacheTracing(ctx context.Context) (func(context.Context) error, func([]byte), error) {
+	shutdownHook, tracingContext, err := initTracing(ctx)
 	if err != nil {
-		return nil, nil, err
+		noopReporter := func(buffer []byte) {
+		}
+		return shutdownHook, noopReporter, err
 	}
 
-	shutdown, err := initTracingProvider(ctx)
-	if err != nil {
-		return nil, nil, err
+	tracer := otel.NewGoCacheTracer(tracingContext)
+	spanReporter := func(buffer []byte) {
+		_ = tracer.ProcessCacheRequest(ctx, buffer)
 	}
 
-	return shutdown, tracingContext, err
+	return shutdownHook, spanReporter, nil
 }
 
 func initTracingProvider(ctx context.Context) (func(context.Context) error, error) {
-	var shutdown func(context.Context) error
-	var err error
 	if flags.TracesLogFile != "" {
-		log.Printf("Starting with the logging reporter, log file: %s", flags.TracesLogFile)
-		shutdown, err = otel.SetupLoggingProvider(ctx, flags.TracesLogFile)
-	} else {
-		shutdown, err = otel.SetupOtelTraceProvider(ctx)
+		vprintf("Starting with the logging reporter, log file: %v", flags.TracesLogFile)
+		return otel.SetupLoggingProvider(ctx, flags.TracesLogFile)
 	}
-	return shutdown, err
+	vprintf("Starting with OTEL Exporter")
+	return otel.SetupOtelTraceProvider(ctx)
 }
 
 func initTracingContext() (*otel.TracingContext, error) {
+	if flags.GithubRepo == "" || flags.GithubRunId == "" || flags.GithubRunAttempt == "" || flags.GithubJobName == "" || flags.GithubStepName == "" {
+		return nil, errors.New("missing required flags for tracing context")
+	}
 	return otel.NewTracingContextFromRunData(flags.GithubRepo, flags.GithubRunId, flags.GithubRunAttempt, flags.GithubJobName, flags.GithubStepName), nil
 }
 

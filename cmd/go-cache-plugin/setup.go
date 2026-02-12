@@ -140,7 +140,7 @@ func initModProxy(env *command.Env, s3c *s3util.Client) (_ http.Handler, cleanup
 		return nil, nil, env.Usagef("you must set --http to enable --modproxy")
 	}
 
-	if s3c == nil && !serveFlags.ModNoCache {
+	if s3c == nil && !flags.LocalOnlyCache {
 		return nil, nil, errors.New("s3 client not configured")
 	}
 
