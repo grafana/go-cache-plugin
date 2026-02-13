@@ -15,7 +15,7 @@ import (
 )
 
 var toolexecFlags struct {
-	TracesLogFile    string `flag:"traces-log-file,default=$GOCACHE_TRACES_LOG_FILE,File used to write traces"`
+	TracesLogFile    string `flag:"toolexec-traces-log-file,default=$GOCACHE_TOOLEXEC_TRACES_LOG_FILE,File used to write traces"`
 	GithubRepo       string `flag:"githubRepo,default=$GITHUB_REPO,Repo name (optional)"`
 	GithubRunId      string `flag:"githubRunId,default=$GITHUB_RUN_ID,Run ID (optional)"`
 	GithubRunAttempt string `flag:"githubRunAttempt,default=$GITHUB_RUN_ATTEMPT,Run attempt (optional)"`

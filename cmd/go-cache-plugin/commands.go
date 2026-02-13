@@ -42,12 +42,12 @@ var flags struct {
 	// Disable S3 caching for local development and testing
 	LocalOnlyCache bool `flag:"local-only,default=$GOCACHE_LOCAL_ONLY,Runs in no cache mode (no S3)"`
 	// Tracing related flags required to determenistically compute parent Span and Trace IDs
-	TracesLogFile    string `flag:"traces-log-file,default=$GOCACHE_TRACES_LOG_FILE,File used to write traces"`
-	GithubRepo       string `flag:"githubRepo,default=$GITHUB_REPO,Repo name (optional)"`
-	GithubRunId      string `flag:"githubRunId,default=$GITHUB_RUN_ID,Run ID (optional)"`
-	GithubRunAttempt string `flag:"githubRunAttempt,default=$GITHUB_RUN_ATTEMPT,Run attempt (optional)"`
-	GithubJobName    string `flag:"githubJobName,default=$GITHUB_JOB_NAME,Job name (optional)"`
-	GithubStepName   string `flag:"githubStepName,default=$GITHUB_STEP_NAME,Step name (optional)"`
+	GocacheTracesLogFile string `flag:"traces-log-file,default=$GOCACHE_TRACES_LOG_FILE,File used to write traces"`
+	GithubRepo           string `flag:"githubRepo,default=$GITHUB_REPO,Repo name (optional)"`
+	GithubRunId          string `flag:"githubRunId,default=$GITHUB_RUN_ID,Run ID (optional)"`
+	GithubRunAttempt     string `flag:"githubRunAttempt,default=$GITHUB_RUN_ATTEMPT,Run attempt (optional)"`
+	GithubJobName        string `flag:"githubJobName,default=$GITHUB_JOB_NAME,Job name (optional)"`
+	GithubStepName       string `flag:"githubStepName,default=$GITHUB_STEP_NAME,Step name (optional)"`
 }
 
 const (
@@ -73,11 +73,12 @@ func runDirect(env *command.Env) error {
 }
 
 var serveFlags struct {
-	Plugin   string `flag:"plugin,default=$GOCACHE_PLUGIN,Plugin service addr (or port) (required)"`
-	HTTP     string `flag:"http,default=$GOCACHE_HTTP,HTTP service address ([host]:port)"`
-	ModProxy bool   `flag:"modproxy,default=$GOCACHE_MODPROXY,Enable a Go module proxy (requires --http)"`
-	RevProxy string `flag:"revproxy,default=$GOCACHE_REVPROXY,Reverse proxy these hosts (comma-separated; requires --http)"`
-	SumDB    string `flag:"sumdb,default=$GOCACHE_SUMDB,SumDB servers to proxy for (comma-separated)"`
+	ServeTraceFile string `flag:"serve-traces-log-file,default=$GOCACHE_SERVE_TRACES_LOG_FILE,File to write module proxy trace logs to"`
+	Plugin         string `flag:"plugin,default=$GOCACHE_PLUGIN,Plugin service addr (or port) (required)"`
+	HTTP           string `flag:"http,default=$GOCACHE_HTTP,HTTP service address ([host]:port)"`
+	ModProxy       bool   `flag:"modproxy,default=$GOCACHE_MODPROXY,Enable a Go module proxy (requires --http)"`
+	RevProxy       string `flag:"revproxy,default=$GOCACHE_REVPROXY,Reverse proxy these hosts (comma-separated; requires --http)"`
+	SumDB          string `flag:"sumdb,default=$GOCACHE_SUMDB,SumDB servers to proxy for (comma-separated)"`
 }
 
 func noopClose(context.Context) error { return nil }
@@ -137,7 +138,7 @@ func runServe(env *command.Env) error {
 	// If an HTTP server is enabled, start it up with debug routes
 	// and whatever other services were requested.
 	if serveFlags.HTTP != "" {
-		shutdownHook, tracingContext, err := initTracing(ctx)
+		shutdownHook, tracingContext, err := initTracing(ctx, serveFlags.ServeTraceFile)
 		if err != nil {
 			vprintf("Failed to initialize tracing: %v", err)
 			vprintf("Starting without otel exporter.")
@@ -227,12 +228,12 @@ func runConnect(env *command.Env, plugin string) error {
 	return nil
 }
 
-func initTracing(ctx context.Context) (func(context.Context) error, *otel.TracingContext, error) {
+func initTracing(ctx context.Context, tracesLogFile string) (func(context.Context) error, *otel.TracingContext, error) {
 	noopShutdownHook := func(context.Context) error {
 		return nil
 	}
 
-	shutdownHook, err := initTracingProvider(ctx)
+	shutdownHook, err := initTracingProvider(ctx, tracesLogFile)
 	if err != nil {
 		return noopShutdownHook, nil, err
 	}
@@ -247,7 +248,7 @@ func initTracing(ctx context.Context) (func(context.Context) error, *otel.Tracin
 }
 
 func initGocacheTracing(ctx context.Context) (func(context.Context) error, func([]byte), error) {
-	shutdownHook, tracingContext, err := initTracing(ctx)
+	shutdownHook, tracingContext, err := initTracing(ctx, flags.GocacheTracesLogFile)
 	if err != nil {
 		noopReporter := func(buffer []byte) {
 		}
@@ -262,10 +263,10 @@ func initGocacheTracing(ctx context.Context) (func(context.Context) error, func(
 	return shutdownHook, spanReporter, nil
 }
 
-func initTracingProvider(ctx context.Context) (func(context.Context) error, error) {
-	if flags.TracesLogFile != "" {
-		vprintf("Starting with the logging reporter, log file: %v", flags.TracesLogFile)
-		return otel.SetupLoggingProvider(ctx, flags.TracesLogFile)
+func initTracingProvider(ctx context.Context, tracesLogFile string) (func(context.Context) error, error) {
+	if tracesLogFile != "" {
+		vprintf("Starting with the logging reporter, log file: %v", tracesLogFile)
+		return otel.SetupLoggingProvider(ctx, tracesLogFile)
 	}
 	vprintf("Starting with OTEL Exporter")
 	return otel.SetupOtelTraceProvider(ctx)
