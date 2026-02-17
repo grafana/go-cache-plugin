@@ -3,9 +3,13 @@ package otel
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
+	"github.com/andybalholm/brotli"
+	"github.com/klauspost/compress/zstd"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
@@ -29,10 +33,30 @@ func SetupLoggingProvider(ctx context.Context, file string) (func(context.Contex
 	if err != nil {
 		return nil, err
 	}
-	exporter, err := stdouttrace.New(stdouttrace.WithWriter(f))
+
+	var writer io.WriteCloser
+	ext := strings.ToLower(filepath.Ext(file))
+
+	switch ext {
+	case ".br", ".brotli":
+		writer = brotli.NewWriter(f)
+	case ".zst", ".zstd":
+		zstdWriter, err := zstd.NewWriter(f)
+		if err != nil {
+			f.Close()
+			return nil, fmt.Errorf("failed to create zstd writer: %w", err)
+		}
+		writer = zstdWriter
+	default:
+		writer = f
+	}
+
+	exporter, err := stdouttrace.New(stdouttrace.WithWriter(writer))
 	if err != nil {
+		writer.Close()
 		return nil, err
 	}
+
 	shutdownHook := setupTraceProvider(exporter)
 	return func(ctx context.Context) error {
 		if err := shutdownHook(ctx); err != nil {
