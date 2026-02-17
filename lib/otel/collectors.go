@@ -34,7 +34,13 @@ func SetupLoggingProvider(ctx context.Context, file string) (func(context.Contex
 		return nil, err
 	}
 	shutdownHook := setupTraceProvider(exporter)
-	return shutdownHook, nil
+	return func(ctx context.Context) error {
+		if err := shutdownHook(ctx); err != nil {
+			writer.Close()
+			return err
+		}
+		return writer.Close()
+	}, nil
 }
 
 func checkTracingConfigured() error {
