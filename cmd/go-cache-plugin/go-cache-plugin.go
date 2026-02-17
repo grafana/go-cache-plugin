@@ -72,7 +72,6 @@ When --http is enabled, the following options are available:
 
 This mode bridges stdin/stdout to a cache server (see the "serve" command)
 listening on the specified port.`,
-
 				Run: command.Adapt(runConnect),
 			},
 			command.HelpCommand(helpTopics),

@@ -18,6 +18,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/grafana/go-cache-plugin/lib/otel"
+
 	"github.com/creachadair/command"
 	"github.com/creachadair/gocache"
 	"github.com/creachadair/taskgroup"
@@ -25,7 +27,7 @@ import (
 
 var flags struct {
 	CacheDir      string        `flag:"cache-dir,default=$GOCACHE_DIR,Local cache directory (required)"`
-	S3Bucket      string        `flag:"bucket,default=$GOCACHE_S3_BUCKET,S3 bucket name (required)"`
+	S3Bucket      string        `flag:"bucket,default=$GOCACHE_S3_BUCKET,S3 bucket name (required if no --local flag provided)"`
 	S3Region      string        `flag:"region,default=$GOCACHE_S3_REGION,S3 region"`
 	S3Endpoint    string        `flag:"s3-endpoint-url,default=$GOCACHE_S3_ENDPOINT_URL,S3 custom endpoint URL (if unset, use AWS default)"`
 	S3PathStyle   bool          `flag:"s3-path-style,default=$GOCACHE_S3_PATH_STYLE,S3 path-style URLs (optional)"`
@@ -37,6 +39,15 @@ var flags struct {
 	Expiration    time.Duration `flag:"expiry,default=$GOCACHE_EXPIRY,Cache expiration period (optional)"`
 	Verbose       bool          `flag:"v,default=$GOCACHE_VERBOSE,Enable verbose logging"`
 	DebugLog      int           `flag:"debug,default=$GOCACHE_DEBUG,Enable detailed per-request debug logging (noisy)"`
+	// Disable S3 caching for local development and testing
+	LocalOnlyCache bool `flag:"local-only,default=$GOCACHE_LOCAL_ONLY,Runs in no cache mode (no S3)"`
+	// Tracing related flags required to determenistically compute parent Span and Trace IDs
+	GocacheTracesLogFile string `flag:"traces-log-file,default=$GOCACHE_TRACES_LOG_FILE,File used to write traces"`
+	GithubRepo           string `flag:"githubRepo,default=$GITHUB_REPO,Repo name (optional)"`
+	GithubRunId          string `flag:"githubRunId,default=$GITHUB_RUN_ID,Run ID (optional)"`
+	GithubRunAttempt     string `flag:"githubRunAttempt,default=$GITHUB_RUN_ATTEMPT,Run attempt (optional)"`
+	GithubJobName        string `flag:"githubJobName,default=$GITHUB_JOB_NAME,Job name (optional)"`
+	GithubStepName       string `flag:"githubStepName,default=$GITHUB_STEP_NAME,Step name (optional)"`
 }
 
 const (
@@ -62,11 +73,12 @@ func runDirect(env *command.Env) error {
 }
 
 var serveFlags struct {
-	Plugin   string `flag:"plugin,default=$GOCACHE_PLUGIN,Plugin service addr (or port) (required)"`
-	HTTP     string `flag:"http,default=$GOCACHE_HTTP,HTTP service address ([host]:port)"`
-	ModProxy bool   `flag:"modproxy,default=$GOCACHE_MODPROXY,Enable a Go module proxy (requires --http)"`
-	RevProxy string `flag:"revproxy,default=$GOCACHE_REVPROXY,Reverse proxy these hosts (comma-separated; requires --http)"`
-	SumDB    string `flag:"sumdb,default=$GOCACHE_SUMDB,SumDB servers to proxy for (comma-separated)"`
+	ServeTraceFile string `flag:"serve-traces-log-file,default=$GOCACHE_SERVE_TRACES_LOG_FILE,File to write module proxy trace logs to"`
+	Plugin         string `flag:"plugin,default=$GOCACHE_PLUGIN,Plugin service addr (or port) (required)"`
+	HTTP           string `flag:"http,default=$GOCACHE_HTTP,HTTP service address ([host]:port)"`
+	ModProxy       bool   `flag:"modproxy,default=$GOCACHE_MODPROXY,Enable a Go module proxy (requires --http)"`
+	RevProxy       string `flag:"revproxy,default=$GOCACHE_REVPROXY,Reverse proxy these hosts (comma-separated; requires --http)"`
+	SumDB          string `flag:"sumdb,default=$GOCACHE_SUMDB,SumDB servers to proxy for (comma-separated)"`
 }
 
 func noopClose(context.Context) error { return nil }
@@ -126,14 +138,21 @@ func runServe(env *command.Env) error {
 	// If an HTTP server is enabled, start it up with debug routes
 	// and whatever other services were requested.
 	if serveFlags.HTTP != "" {
+		shutdownHook, tracingContext, err := initTracing(ctx, serveFlags.ServeTraceFile)
+		if err != nil {
+			vprintf("Failed to initialize tracing: %v", err)
+			vprintf("Starting without otel exporter.")
+		}
+
 		srv := &http.Server{
 			Addr:    serveFlags.HTTP,
-			Handler: makeHandler(modProxy, revProxy),
+			Handler: makeHandler(modProxy, revProxy, tracingContext),
 		}
 		g.Go(srv.ListenAndServe)
 		vprintf("HTTP server listening at %q", serveFlags.HTTP)
 		g.Run(func() {
 			<-ctx.Done()
+			shutdownHook(ctx)
 			vprintf("stopping HTTP service")
 			srv.Shutdown(context.Background())
 		})
@@ -169,8 +188,15 @@ func runServe(env *command.Env) error {
 
 // runConnect implements a direct cache proxy by connecting to a remote server.
 func runConnect(env *command.Env, plugin string) error {
-	addr := plugin
 
+	ctx := env.Context()
+	shutdownTracer, reportSpan, err := initGocacheTracing(ctx)
+	if err != nil {
+		vprintf("Failed to init tracing provider, err %v. Starting without tracing.", err)
+	}
+	defer shutdownTracer(ctx)
+
+	addr := plugin
 	// If the caller has not specified a host/port, then likely this is an older usage which only specifies port
 	if !strings.Contains(plugin, ":") {
 		port, err := strconv.Atoi(plugin)
@@ -190,15 +216,67 @@ func runConnect(env *command.Env, plugin string) error {
 
 	out := taskgroup.Go(func() error {
 		defer conn.(*net.TCPConn).CloseWrite() // let the server finish
-		return copy(conn, os.Stdin)
+		return copy(conn, os.Stdin, reportSpan)
 	})
-	if rerr := copy(os.Stdout, conn); rerr != nil {
+	if rerr := copy(os.Stdout, conn, reportSpan); rerr != nil {
 		vprintf("read responses: %v", err)
 	}
 	out.Wait()
 	conn.Close()
+
 	vprintf("connection closed (%v elapsed)", time.Since(start))
 	return nil
+}
+
+func initTracing(ctx context.Context, tracesLogFile string) (func(context.Context) error, *otel.TracingContext, error) {
+	noopShutdownHook := func(context.Context) error {
+		return nil
+	}
+
+	shutdownHook, err := initTracingProvider(ctx, tracesLogFile)
+	if err != nil {
+		return noopShutdownHook, nil, err
+	}
+
+	tracingContext, err := initTracingContext()
+	if err != nil {
+		go shutdownHook(ctx)
+		return noopShutdownHook, nil, err
+	}
+
+	return shutdownHook, tracingContext, err
+}
+
+func initGocacheTracing(ctx context.Context) (func(context.Context) error, func([]byte), error) {
+	shutdownHook, tracingContext, err := initTracing(ctx, flags.GocacheTracesLogFile)
+	if err != nil {
+		noopReporter := func(buffer []byte) {
+		}
+		return shutdownHook, noopReporter, err
+	}
+
+	tracer := otel.NewGoCacheTracer(tracingContext)
+	spanReporter := func(buffer []byte) {
+		_ = tracer.ProcessCacheRequest(ctx, buffer)
+	}
+
+	return shutdownHook, spanReporter, nil
+}
+
+func initTracingProvider(ctx context.Context, tracesLogFile string) (func(context.Context) error, error) {
+	if tracesLogFile != "" {
+		vprintf("Starting with the logging reporter, log file: %v", tracesLogFile)
+		return otel.SetupLoggingProvider(ctx, tracesLogFile)
+	}
+	vprintf("Starting with OTEL Exporter")
+	return otel.SetupOtelTraceProvider(ctx)
+}
+
+func initTracingContext() (*otel.TracingContext, error) {
+	if flags.GithubRepo == "" || flags.GithubRunId == "" || flags.GithubRunAttempt == "" || flags.GithubJobName == "" || flags.GithubStepName == "" {
+		return nil, errors.New("missing required flags for tracing context")
+	}
+	return otel.NewTracingContextFromRunData(flags.GithubRepo, flags.GithubRunId, flags.GithubRunAttempt, flags.GithubJobName, flags.GithubStepName), nil
 }
 
 // copy emulates the base case of io.Copy, but does not attempt to use the
@@ -206,7 +284,7 @@ func runConnect(env *command.Env, plugin string) error {
 //
 // TODO(creachadair): For some reason io.Copy does not work correctly when r is
 // a pipe (e.g., stdin) and w is a TCP socket. Figure out why.
-func copy(w io.Writer, r io.Reader) error {
+func copy(w io.Writer, r io.Reader, reportTrace func([]byte)) error {
 	var buf [4096]byte
 	for {
 		nr, err := r.Read(buf[:])
@@ -216,6 +294,8 @@ func copy(w io.Writer, r io.Reader) error {
 			} else if nw < nr {
 				return fmt.Errorf("wrote %d < %d bytes: %w", nw, nr, io.ErrShortWrite)
 			}
+
+			reportTrace(buf[:])
 		}
 		if err == io.EOF {
 			return nil

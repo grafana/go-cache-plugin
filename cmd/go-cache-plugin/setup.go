@@ -18,6 +18,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/grafana/go-cache-plugin/lib/otel"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -39,8 +41,34 @@ func initCacheServer(env *command.Env) (*gocache.Server, *s3util.Client, error) 
 	switch {
 	case flags.CacheDir == "":
 		return nil, nil, env.Usagef("you must provide a --cache-dir")
-	case flags.S3Bucket == "":
-		return nil, nil, env.Usagef("you must provide an S3 --bucket name")
+	case flags.LocalOnlyCache:
+		dirCache, err := cachedir.New(flags.CacheDir)
+		if err != nil {
+			return nil, nil, fmt.Errorf("create local cache: %w", err)
+		}
+
+		cacheClose := func(context.Context) error { return nil }
+		if flags.Expiration > 0 {
+			dirClose := dirCache.Cleanup(flags.Expiration)
+			cacheClose = func(ctx context.Context) error {
+				return errors.Join(dirClose(ctx))
+			}
+		}
+
+		setMetrics := func(ctx context.Context, m *expvar.Map) {}
+		s := &gocache.Server{
+			Get:         dirCache.Get,
+			Put:         dirCache.Put,
+			Close:       cacheClose,
+			SetMetrics:  setMetrics,
+			MaxRequests: flags.Concurrency,
+			Logf:        vprintf,
+			LogRequests: flags.DebugLog&debugBuildCache != 0,
+		}
+		return s, nil, nil
+
+	case flags.S3Bucket == "" && !flags.LocalOnlyCache:
+		return nil, nil, env.Usagef("you must provide an S3 --bucket name or run with --no-cache")
 	}
 	region, err := getBucketRegion(env.Context(), flags.S3Bucket)
 	if err != nil {
@@ -112,19 +140,30 @@ func initModProxy(env *command.Env, s3c *s3util.Client) (_ http.Handler, cleanup
 		return nil, nil, env.Usagef("you must set --http to enable --modproxy")
 	}
 
-	modCachePath := filepath.Join(flags.CacheDir, "module")
-	if err := os.MkdirAll(modCachePath, 0755); err != nil {
-		return nil, nil, fmt.Errorf("create module cache: %w", err)
+	if s3c == nil && !flags.LocalOnlyCache {
+		return nil, nil, errors.New("s3 client not configured")
 	}
-	cacher := &modproxy.S3Cacher{
-		Local:       modCachePath,
-		S3Client:    s3c,
-		KeyPrefix:   path.Join(flags.KeyPrefix, "module"),
-		MaxTasks:    flags.S3Concurrency,
-		Logf:        vprintf,
-		LogRequests: flags.DebugLog&debugModProxy != 0,
+
+	var cacher goproxy.Cacher = nil
+	var metrics = func() *expvar.Map { return &expvar.Map{} }
+	if s3c != nil {
+		modCachePath := filepath.Join(flags.CacheDir, "module")
+		if err := os.MkdirAll(modCachePath, 0755); err != nil {
+			return nil, nil, fmt.Errorf("create module cache: %w", err)
+		}
+
+		cacher := &modproxy.S3Cacher{
+			Local:       modCachePath,
+			S3Client:    s3c,
+			KeyPrefix:   path.Join(flags.KeyPrefix, "module"),
+			MaxTasks:    flags.S3Concurrency,
+			Logf:        vprintf,
+			LogRequests: flags.DebugLog&debugModProxy != 0,
+		}
+		cleanup = func() { vprintf("close cacher (err=%v)", cacher.Close()) }
+		metrics = cacher.Metrics
 	}
-	cleanup = func() { vprintf("close cacher (err=%v)", cacher.Close()) }
+
 	proxy := &goproxy.Goproxy{
 		Fetcher: &goproxy.GoFetcher{
 			// As configured, the fetcher should never shell out to the go
@@ -142,7 +181,7 @@ func initModProxy(env *command.Env, s3c *s3util.Client) (_ http.Handler, cleanup
 		proxy.ProxiedSumDBs = strings.Split(serveFlags.SumDB, ",")
 		vprintf("enabling sum DB proxy for %s", strings.Join(proxy.ProxiedSumDBs, ", "))
 	}
-	expvar.Publish("modcache", cacher.Metrics())
+	expvar.Publish("modcache", metrics())
 	return http.StripPrefix("/mod", proxy), cleanup, nil
 }
 
@@ -268,7 +307,7 @@ func initServerCert(env *command.Env, hosts []string) (tls.Certificate, error) {
 
 // makeHandler returns an HTTP handler that dispatches requests to debug
 // handlers or to the specified proxies, if they are defined.
-func makeHandler(modProxy, revProxy http.Handler) http.HandlerFunc {
+func makeHandler(modProxy, revProxy http.Handler, tracingContext *otel.TracingContext) http.HandlerFunc {
 	mux := http.NewServeMux()
 	tsweb.Debugger(mux)
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -289,6 +328,11 @@ func makeHandler(modProxy, revProxy http.Handler) http.HandlerFunc {
 			return
 		}
 		if modProxy != nil && r.Method == http.MethodGet && strings.HasPrefix(path, "/mod/") {
+			if tracingContext != nil {
+				_, span := tracingContext.SpanWithContext(r.Context(), strings.TrimPrefix(path, "/mod/"))
+				defer span.End()
+			}
+
 			modProxy.ServeHTTP(w, r)
 			return
 		}
