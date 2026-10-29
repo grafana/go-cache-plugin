@@ -1,10 +1,9 @@
 module github.com/grafana/go-cache-plugin
 
-go 1.24.0
-
-toolchain go1.24.2
+go 1.25.0
 
 require (
+	github.com/aws/aws-sdk-go-v2 v1.36.0
 	github.com/aws/aws-sdk-go-v2/config v1.29.5
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.75.3
 	github.com/creachadair/atomicfile v0.3.7
@@ -18,14 +17,13 @@ require (
 	github.com/creachadair/tlsutil v0.0.0-20241111194928-a9f540254538
 	github.com/goproxy/goproxy v0.18.0
 	golang.org/x/sync v0.13.0
-	golang.org/x/sys v0.32.0
+	golang.org/x/sys v0.44.0
 	honnef.co/go/tools v0.6.1
 	tailscale.com v1.82.5
 )
 
 require (
 	github.com/BurntSushi/toml v1.4.1-0.20240526193622-a339e1f7089c // indirect
-	github.com/aws/aws-sdk-go-v2 v1.36.0 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.6.8 // indirect
 	github.com/aws/aws-sdk-go-v2/credentials v1.17.58 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.16.27 // indirect
