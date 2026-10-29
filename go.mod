@@ -1,10 +1,9 @@
 module github.com/grafana/go-cache-plugin
 
-go 1.24.0
-
-toolchain go1.24.2
+go 1.25.0
 
 require (
+	github.com/aws/aws-sdk-go-v2 v1.36.0
 	github.com/aws/aws-sdk-go-v2/config v1.29.5
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.75.3
 	github.com/creachadair/atomicfile v0.3.7
@@ -17,15 +16,14 @@ require (
 	github.com/creachadair/taskgroup v0.13.2
 	github.com/creachadair/tlsutil v0.0.0-20241111194928-a9f540254538
 	github.com/goproxy/goproxy v0.18.0
-	golang.org/x/sync v0.13.0
-	golang.org/x/sys v0.32.0
+	golang.org/x/sync v0.22.0
+	golang.org/x/sys v0.47.0
 	honnef.co/go/tools v0.6.1
 	tailscale.com v1.82.5
 )
 
 require (
 	github.com/BurntSushi/toml v1.4.1-0.20240526193622-a339e1f7089c // indirect
-	github.com/aws/aws-sdk-go-v2 v1.36.0 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.6.8 // indirect
 	github.com/aws/aws-sdk-go-v2/credentials v1.17.58 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.16.27 // indirect
@@ -45,11 +43,11 @@ require (
 	github.com/go-json-experiment/json v0.0.0-20250223041408-d3c622f1b874 // indirect
 	go4.org/mem v0.0.0-20240501181205-ae6ca9944745 // indirect
 	go4.org/netipx v0.0.0-20231129151722-fdeea329fbba // indirect
-	golang.org/x/crypto v0.35.0 // indirect
+	golang.org/x/crypto v0.55.0 // indirect
 	golang.org/x/exp/typeparams v0.0.0-20240314144324-c7f7c6466f7f // indirect
-	golang.org/x/mod v0.23.0 // indirect
-	golang.org/x/net v0.36.0 // indirect
-	golang.org/x/tools v0.30.0 // indirect
+	golang.org/x/mod v0.40.0 // indirect
+	golang.org/x/net v0.58.0 // indirect
+	golang.org/x/tools v0.49.0 // indirect
 )
 
 retract (
